@@ -1,0 +1,10 @@
+data/
+*.pyc
+__pycache__/
+*.pth
+*.pt
+data/
+*.pyc
+__pycache__/
+*.pth
+*.pt

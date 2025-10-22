@@ -19,7 +19,6 @@ import torch.nn.functional as F
 import numpy as np
 from typing import List
 
-
 class DropPath(nn.Module):
     """
     Stochastic Depth (Drop Path) for regularisation.
@@ -62,7 +61,7 @@ class LayerNorm2d(nn.Module):
     
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # x: [N, C, H, W]
-        # Normalize across channel dimension
+        # Normalise across channel dimension
         mean = x.mean(dim=1, keepdim=True)
         var = x.var(dim=1, keepdim=True, unbiased=False)
         x_hat = (x - mean) / torch.sqrt(var + self.eps)
@@ -157,7 +156,7 @@ class ConvNeXt(nn.Module):
         drop_path_rate: Overall drop path rate (stochastic depth)
         dropout_rate: Dropout rate before classifier
         layer_scale_init_value: Initial value for layer scale
-        head_init_scale: Scaling factor for head initialization
+        head_init_scale: Scaling factor for head initialisation
     """
     def __init__(
         self,
@@ -235,7 +234,7 @@ class ConvNeXt(nn.Module):
             self.head.bias.data.mul_(head_init_scale)
     
     def _init_weights(self, m: nn.Module):
-        """Initialize weights with truncated normal distribution"""
+        """Initialise weights with truncated normal distribution"""
         if isinstance(m, (nn.Conv2d, nn.Linear)):
             nn.init.trunc_normal_(m.weight, std=0.02)
             if m.bias is not None:
@@ -382,11 +381,14 @@ class MixUpAugmentation:
         """
         return lam * criterion(pred, y_a) + (1 - lam) * criterion(pred, y_b)
 
-def convnext_tiny(in_chans=1, num_classes=2, dropout=0.5, pretrained=False):
+def convnext_tiny(in_chans=1, num_classes=2, dropout=0.5, pretrained=False, pretrain_stages='all'):
     """
     ConvNeXt-Tiny: ~28M parameters
     depths: [3, 3, 9, 3]
     dims: [96, 192, 384, 768]
+    
+    Args:
+        pretrain_stages: 'all', 'early' (stem+stage1-2), or 'stem' (stem only)
     """
     model = ConvNeXt(
         in_chans=in_chans,
@@ -397,16 +399,19 @@ def convnext_tiny(in_chans=1, num_classes=2, dropout=0.5, pretrained=False):
     )
     
     if pretrained:
-        load_pretrained_weights(model, 'convnext_tiny')
+        load_pretrained_weights(model, 'convnext_tiny', pretrain_stages)
     
     return model
 
 
-def convnext_small(in_chans=1, num_classes=2, dropout=0.5, pretrained=False):
+def convnext_small(in_chans=1, num_classes=2, dropout=0.5, pretrained=False, pretrain_stages='all'):
     """
     ConvNeXt-Small: ~50M parameters
     depths: [3, 3, 27, 3]
     dims: [96, 192, 384, 768]
+    
+    Args:
+        pretrain_stages: 'all', 'early' (stem+stage1-2), or 'stem' (stem only)
     """
     model = ConvNeXt(
         in_chans=in_chans,
@@ -417,16 +422,19 @@ def convnext_small(in_chans=1, num_classes=2, dropout=0.5, pretrained=False):
     )
     
     if pretrained:
-        load_pretrained_weights(model, 'convnext_small')
+        load_pretrained_weights(model, 'convnext_small', pretrain_stages)
     
     return model
 
 
-def convnext_base(in_chans=1, num_classes=2, dropout=0.5, pretrained=False):
+def convnext_base(in_chans=1, num_classes=2, dropout=0.5, pretrained=False, pretrain_stages='all'):
     """
     ConvNeXt-Base: ~89M parameters
     depths: [3, 3, 27, 3]
     dims: [128, 256, 512, 1024]
+    
+    Args:
+        pretrain_stages: 'all', 'early' (stem+stage1-2), or 'stem' (stem only)
     """
     model = ConvNeXt(
         in_chans=in_chans,
@@ -437,12 +445,12 @@ def convnext_base(in_chans=1, num_classes=2, dropout=0.5, pretrained=False):
     )
     
     if pretrained:
-        load_pretrained_weights(model, 'convnext_base')
+        load_pretrained_weights(model, 'convnext_base', pretrain_stages)
     
     return model
 
 
-def load_pretrained_weights(model: ConvNeXt, model_name: str):
+def load_pretrained_weights(model: ConvNeXt, model_name: str, pretrain_stages='all'):
     """
     Load ImageNet pretrained weights into our custom-built model.
     
@@ -454,11 +462,13 @@ def load_pretrained_weights(model: ConvNeXt, model_name: str):
     Args:
         model: Our custom ConvNeXt model
         model_name: 'convnext_tiny', 'convnext_small', or 'convnext_base'
+        pretrain_stages: 'all' (full backbone), 'early' (stem + stage 1-2), or 'stem' (stem only)
     """
     try:
         import torchvision.models as models
         
         print(f"\nLoading pretrained ImageNet weights for {model_name}...")
+        print(f"Pretrain strategy: {pretrain_stages}")
         
         # Load official pretrained model
         if model_name == 'convnext_tiny':
@@ -474,18 +484,39 @@ def load_pretrained_weights(model: ConvNeXt, model_name: str):
         pretrained_dict = pretrained_model.state_dict()
         model_dict = model.state_dict()
         
-        # Filter out classifier head (we have 2 classes, pretrained has 1000)
-        pretrained_dict = {
-            k: v for k, v in pretrained_dict.items() 
-            if k in model_dict and 'head' not in k and v.shape == model_dict[k].shape
-        }
+        # Define which layers to load based on strategy
+        if pretrain_stages == 'stem':
+            # Only stem (most conservative)
+            allowed_keys = ['downsample_layers.0']
+        elif pretrain_stages == 'early':
+            # Stem + early stages (conservative)
+            allowed_keys = ['downsample_layers.0', 'downsample_layers.1', 
+                           'stages.0', 'stages.1']
+        else:  # 'all'
+            # Full backbone (aggressive)
+            allowed_keys = None  # Will allow all except classifier
+        
+        # Filter weights
+        if allowed_keys is not None:
+            # Partial loading
+            pretrained_dict = {
+                k: v for k, v in pretrained_dict.items() 
+                if k in model_dict and v.shape == model_dict[k].shape and
+                any(allowed in k for allowed in allowed_keys) and 'head' not in k
+            }
+        else:
+            # Full backbone loading (skip only classifier)
+            pretrained_dict = {
+                k: v for k, v in pretrained_dict.items() 
+                if k in model_dict and 'head' not in k and v.shape == model_dict[k].shape
+            }
         
         # Update our model
         model_dict.update(pretrained_dict)
         model.load_state_dict(model_dict, strict=False)
         
-        print(f"✓ Loaded {len(pretrained_dict)} pretrained weights")
-        print(f"✓ Classifier head initialized randomly for {model.num_classes} classes")
+        print(f"Loaded {len(pretrained_dict)} pretrained weight tensors")
+        print(f"Classifier head initialised randomly for {model.num_classes} classes")
         
     except Exception as e:
         print(f"⚠ Warning: Could not load pretrained weights: {e}")
@@ -493,7 +524,7 @@ def load_pretrained_weights(model: ConvNeXt, model_name: str):
 
 
 def get_model(model_name='convnext_small', in_chans=1, num_classes=2, 
-              dropout=0.5, pretrained=False):
+              dropout=0.5, pretrained=False, pretrain_stages='all'):
     """
     Factory function to create ConvNeXt models.
     
@@ -503,16 +534,17 @@ def get_model(model_name='convnext_small', in_chans=1, num_classes=2,
         num_classes: Number of output classes (2 for AD/NC)
         dropout: Dropout rate before classifier
         pretrained: Whether to load ImageNet pretrained weights
+        pretrain_stages: 'all' (full backbone), 'early' (stem+stages1-2), 'stem' (stem only)
     
     Returns:
         ConvNeXt model ready for training
     """
     if model_name == 'convnext_tiny':
-        return convnext_tiny(in_chans, num_classes, dropout, pretrained)
+        return convnext_tiny(in_chans, num_classes, dropout, pretrained, pretrain_stages)
     elif model_name == 'convnext_small':
-        return convnext_small(in_chans, num_classes, dropout, pretrained)
+        return convnext_small(in_chans, num_classes, dropout, pretrained, pretrain_stages)
     elif model_name == 'convnext_base':
-        return convnext_base(in_chans, num_classes, dropout, pretrained)
+        return convnext_base(in_chans, num_classes, dropout, pretrained, pretrain_stages)
     else:
         raise ValueError(f"Unknown model: {model_name}")
 

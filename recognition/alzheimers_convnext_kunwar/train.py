@@ -6,18 +6,19 @@ Features:
 - From-scratch or pretrained training
 - Label Smoothing loss
 - Optional MixUp augmentation
-- OneCycleLR scheduler
+- OneCycleLR or CosineAnnealingLR scheduler (configurable)
 - Early stopping
-- Weights & Biases (wandb) tracking
+- Weights & Biases (wandb) tracking with dynamic naming
 - Comprehensive logging
 """
 
 import os
 import time
+from datetime import datetime
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.optim.lr_scheduler import OneCycleLR
+from torch.optim.lr_scheduler import OneCycleLR, CosineAnnealingLR
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 import json
@@ -42,7 +43,7 @@ def get_device():
 
 
 def train_one_epoch(model, train_loader, criterion, optimizer, scheduler, device, 
-                    epoch, use_mixup=False, mixup=None):
+                    epoch, use_mixup=False, mixup=None, scheduler_type='onecycle'):
     """
     Train for one epoch
     
@@ -56,6 +57,7 @@ def train_one_epoch(model, train_loader, criterion, optimizer, scheduler, device
         epoch: Current epoch number
         use_mixup: Whether to use MixUp augmentation
         mixup: MixUpAugmentation object
+        scheduler_type: Type of scheduler ('onecycle' or 'cosine')
     
     Returns:
         epoch_loss: Average training loss
@@ -94,7 +96,10 @@ def train_one_epoch(model, train_loader, criterion, optimizer, scheduler, device
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         
         optimizer.step()
-        scheduler.step()  # Step per batch for OneCycleLR
+        
+        # Step scheduler per batch for OneCycleLR
+        if scheduler_type == 'onecycle':
+            scheduler.step()
         
         # Statistics
         running_loss += loss.item()
@@ -232,6 +237,66 @@ def plot_training_curves(train_losses, train_accs, val_losses, val_accs, save_pa
     return fig
 
 
+def generate_run_name(model_name, pretrained, use_mixup, scheduler_type, 
+                      loss_type, job_id, include_timestamp=True):
+    """
+    Generate a descriptive run name for wandb
+    
+    Args:
+        model_name: Model architecture name
+        pretrained: Whether using pretrained weights
+        use_mixup: Whether using MixUp augmentation
+        scheduler_type: Type of LR scheduler
+        loss_type: Type of loss function
+        job_id: SLURM job ID or local timestamp
+        include_timestamp: Whether to include timestamp
+    
+    Returns:
+        Descriptive run name string
+    """
+    # Extract model size (tiny/small/base)
+    model_size = model_name.replace('convnext_', '')
+    
+    # Training mode
+    if pretrained:
+        train_mode = 'pretrained'
+    else:
+        train_mode = 'scratch'
+    
+    # Build components
+    components = [
+        model_size,  # tiny/small/base
+        train_mode,  # scratch/pretrained
+    ]
+    
+    # Add scheduler
+    if scheduler_type == 'onecycle':
+        components.append('1cycle')
+    else:
+        components.append('cosine')
+    
+    # Add loss type if not default
+    if loss_type != 'label_smoothing':
+        components.append(loss_type)
+    
+    # Add mixup if enabled
+    if use_mixup:
+        components.append('mixup')
+    
+    # Add job ID
+    components.append(f'j{job_id}')
+    
+    # Add timestamp if requested
+    if include_timestamp:
+        timestamp = datetime.now().strftime('%m%d_%H%M')
+        components.append(timestamp)
+    
+    # Join with underscores
+    run_name = '_'.join(components)
+    
+    return run_name
+
+
 def train(
     # Data parameters
     data_dir='/home/groups/comp3710/ADNI/AD_NC',
@@ -250,6 +315,14 @@ def train(
     learning_rate=1e-4,
     weight_decay=0.01,
     
+    # Scheduler parameters
+    scheduler_type='onecycle',  # 'onecycle' or 'cosine'
+    onecycle_pct_start=0.3,     # OneCycleLR: warmup percentage
+    onecycle_div_factor=10,     # OneCycleLR: initial lr division
+    onecycle_final_div=1e4,     # OneCycleLR: final lr division
+    cosine_t_max=None,          # CosineAnnealingLR: period (default: num_epochs)
+    cosine_eta_min=1e-6,        # CosineAnnealingLR: minimum lr
+    
     # Loss and augmentation
     loss_type='label_smoothing',  # 'label_smoothing' or 'cross_entropy'
     label_smoothing=0.1,
@@ -260,14 +333,15 @@ def train(
     use_wandb=True,
     wandb_project='alzheimers-convnext',
     wandb_entity=None,  # Your wandb username or team name
-    wandb_run_name=None,  # Optional custom run name
+    wandb_run_name=None,  # Optional manual override
+    wandb_include_timestamp=True,  # Include timestamp in auto-generated names
     
     # Other
     save_dir='./checkpoints',
     patience=10
 ):
     """
-    Main training function with wandb integration
+    Main training function with wandb integration and flexible LR scheduling
     
     Args:
         data_dir: Path to ADNI dataset
@@ -279,8 +353,14 @@ def train(
         pretrained: Whether to use pretrained weights
         pretrain_stages: Which stages to pretrain ('all', 'early', 'stem')
         num_epochs: Number of training epochs
-        learning_rate: Learning rate
+        learning_rate: Base learning rate
         weight_decay: Weight decay
+        scheduler_type: 'onecycle' or 'cosine'
+        onecycle_pct_start: OneCycleLR warmup percentage
+        onecycle_div_factor: OneCycleLR initial lr division factor
+        onecycle_final_div: OneCycleLR final lr division factor
+        cosine_t_max: CosineAnnealingLR period (default: num_epochs)
+        cosine_eta_min: CosineAnnealingLR minimum learning rate
         loss_type: Loss function type
         label_smoothing: Label smoothing parameter
         use_mixup: Whether to use MixUp augmentation
@@ -288,7 +368,8 @@ def train(
         use_wandb: Whether to use Weights & Biases tracking
         wandb_project: wandb project name
         wandb_entity: wandb entity (username or team)
-        wandb_run_name: Optional custom run name
+        wandb_run_name: Manual run name override (None for auto-generation)
+        wandb_include_timestamp: Include timestamp in auto-generated run names
         save_dir: Directory to save checkpoints
         patience: Early stopping patience
     
@@ -303,6 +384,21 @@ def train(
     # Get job ID from SLURM or use timestamp
     job_id = os.environ.get('SLURM_JOB_ID', f'local_{int(time.time())}')
     
+    # Generate run name (either use provided or auto-generate)
+    if wandb_run_name is None:
+        wandb_run_name = generate_run_name(
+            model_name=model_name,
+            pretrained=pretrained,
+            use_mixup=use_mixup,
+            scheduler_type=scheduler_type,
+            loss_type=loss_type,
+            job_id=job_id,
+            include_timestamp=wandb_include_timestamp
+        )
+        print(f"\n📝 Auto-generated run name: {wandb_run_name}")
+    else:
+        print(f"\n📝 Using custom run name: {wandb_run_name}")
+    
     # Initialize wandb
     if use_wandb:
         # Create config dictionary for wandb
@@ -316,6 +412,7 @@ def train(
             'dropout': dropout,
             'pretrained': pretrained,
             'pretrain_stages': pretrain_stages if pretrained else None,
+            'scheduler_type': scheduler_type,
             'loss_type': loss_type,
             'label_smoothing': label_smoothing if loss_type == 'label_smoothing' else None,
             'use_mixup': use_mixup,
@@ -325,16 +422,39 @@ def train(
             'patience': patience,
         }
         
+        # Add scheduler-specific config
+        if scheduler_type == 'onecycle':
+            config.update({
+                'onecycle_pct_start': onecycle_pct_start,
+                'onecycle_div_factor': onecycle_div_factor,
+                'onecycle_final_div': onecycle_final_div,
+            })
+        else:
+            config.update({
+                'cosine_t_max': cosine_t_max or num_epochs,
+                'cosine_eta_min': cosine_eta_min,
+            })
+        
+        # Create tags
+        tags = [
+            model_name,
+            'from_scratch' if not pretrained else 'pretrained',
+            scheduler_type,
+            loss_type,
+        ]
+        if use_mixup:
+            tags.append('mixup')
+        
         # Initialize wandb run
         wandb.init(
             project=wandb_project,
             entity=wandb_entity,
-            name=wandb_run_name or f"{model_name}_job{job_id}",
+            name=wandb_run_name,
             config=config,
-            tags=[model_name, 'from_scratch' if not pretrained else 'pretrained'],
+            tags=tags,
         )
         
-        print(f"\n✓ Wandb initialized: {wandb.run.name}")
+        print(f"\n✓ Wandb initialised: {wandb.run.name}")
         print(f"✓ View run at: {wandb.run.url}\n")
     
     # Get device
@@ -407,20 +527,42 @@ def train(
         weight_decay=weight_decay
     )
     
-    # Learning rate scheduler (OneCycleLR)
-    scheduler = OneCycleLR(
-        optimizer,
-        max_lr=learning_rate * 10,  # Peak at 10x base LR
-        steps_per_epoch=len(train_loader),
-        epochs=num_epochs,
-        pct_start=0.3,  # Warmup for first 30%
-        anneal_strategy='cos',
-        div_factor=10,  # Start at lr/10
-        final_div_factor=1e4  # End very low
-    )
+    # Learning rate scheduler
+    print(f"\nScheduler Type: {scheduler_type.upper()}")
     
-    print(f"Optimizer: AdamW (lr={learning_rate}, weight_decay={weight_decay})")
-    print(f"Scheduler: OneCycleLR (max_lr={learning_rate*10})")
+    if scheduler_type == 'onecycle':
+        scheduler = OneCycleLR(
+            optimizer,
+            max_lr=learning_rate * 10,  # Peak at 10x base LR
+            steps_per_epoch=len(train_loader),
+            epochs=num_epochs,
+            pct_start=onecycle_pct_start,
+            anneal_strategy='cos',
+            div_factor=onecycle_div_factor,
+            final_div_factor=onecycle_final_div
+        )
+        print(f"OneCycleLR Settings:")
+        print(f"  Max LR: {learning_rate * 10:.2e}")
+        print(f"  Warmup: {onecycle_pct_start*100:.0f}% of training")
+        print(f"  Initial LR: {learning_rate / onecycle_div_factor:.2e}")
+        print(f"  Final LR: {learning_rate * 10 / onecycle_final_div:.2e}")
+    
+    elif scheduler_type == 'cosine':
+        t_max = cosine_t_max or num_epochs
+        scheduler = CosineAnnealingLR(
+            optimizer,
+            T_max=t_max,
+            eta_min=cosine_eta_min
+        )
+        print(f"CosineAnnealingLR Settings:")
+        print(f"  Initial LR: {learning_rate:.2e}")
+        print(f"  Min LR: {cosine_eta_min:.2e}")
+        print(f"  Period (T_max): {t_max} epochs")
+    
+    else:
+        raise ValueError(f"Unknown scheduler type: {scheduler_type}. Use 'onecycle' or 'cosine'")
+    
+    print(f"\nOptimizer: AdamW (lr={learning_rate}, weight_decay={weight_decay})")
     
     # Save local configuration
     config_dict = {
@@ -433,6 +575,7 @@ def train(
         'dropout': dropout,
         'pretrained': pretrained,
         'pretrain_stages': pretrain_stages if pretrained else None,
+        'scheduler_type': scheduler_type,
         'loss_type': loss_type,
         'label_smoothing': label_smoothing if loss_type == 'label_smoothing' else None,
         'use_mixup': use_mixup,
@@ -463,13 +606,17 @@ def train(
         # Train
         train_loss, train_acc = train_one_epoch(
             model, train_loader, criterion, optimizer, scheduler, device, 
-            epoch, use_mixup, mixup
+            epoch, use_mixup, mixup, scheduler_type
         )
         
         # Validate
         val_loss, val_acc, per_class_acc = validate(
             model, test_loader, criterion, device, epoch
         )
+        
+        # Step scheduler per epoch for CosineAnnealingLR
+        if scheduler_type == 'cosine':
+            scheduler.step()
         
         # Save history
         train_losses.append(train_loss)
@@ -562,6 +709,7 @@ def train(
         print("  - Using pretrained weights (pretrained=True)")
         print("  - Enabling MixUp (use_mixup=True)")
         print("  - Adjusting learning rate or dropout")
+        print(f"  - Trying different scheduler (current: {scheduler_type})")
     
     # Plot training curves
     curves_path = os.path.join(save_dir, f'training_curves_job{job_id}.png')
@@ -611,9 +759,11 @@ def train(
 
 
 if __name__ == '__main__':
-    # Choose your training strategy:
+    # ===================================================================
+    # EXPERIMENT EXAMPLES - Uncomment the one you want to run
+    # ===================================================================
     
-    # OPTION 1: From Scratch with wandb tracking
+    # OPTION 1: From Scratch with OneCycleLR (Auto-generated name)
     model, history = train(
         data_dir='/home/groups/comp3710/ADNI/AD_NC',
         model_name='convnext_small',
@@ -621,55 +771,37 @@ if __name__ == '__main__':
         num_epochs=40,
         learning_rate=1e-4,
         dropout=0.5,
-        pretrained=False,  # ← Train from scratch
+        pretrained=False,
+        scheduler_type='onecycle',  # ← OneCycleLR
         loss_type='label_smoothing',
         label_smoothing=0.1,
         use_mixup=False,
-        use_wandb=True,  # ← Enable wandb
+        use_wandb=True,
         wandb_project='alzheimers-convnext',
-        wandb_entity='limpyrawnuk-the-university-of-queensland',  # ← Your wandb team
-        wandb_run_name='convnext-small-from-scratch',  # ← Custom run name
+        wandb_entity='limpyrawnuk-the-university-of-queensland',
+        # wandb_run_name left as None for auto-generation
+        # Will create: small_scratch_1cycle_j{jobid}_0127_1430
         save_dir='./checkpoints'
     )
     
-    # OPTION 2: Partial Pretrained (Conservative - if Option 1 doesn't reach 80%)
+    # OPTION 2: From Scratch with CosineAnnealingLR (Auto-generated name)
     # model, history = train(
     #     data_dir='/home/groups/comp3710/ADNI/AD_NC',
     #     model_name='convnext_small',
     #     batch_size=32,
-    #     num_epochs=30,
-    #     learning_rate=2e-4,
+    #     num_epochs=40,
+    #     learning_rate=1e-4,
     #     dropout=0.5,
-    #     pretrained=True,
-    #     pretrain_stages='early',  # ← Only stem + stage 1-2
+    #     pretrained=False,
+    #     scheduler_type='cosine',  # ← CosineAnnealingLR
+    #     cosine_t_max=40,  # Period equals num_epochs
+    #     cosine_eta_min=1e-6,  # Minimum LR
     #     loss_type='label_smoothing',
     #     label_smoothing=0.1,
-    #     use_mixup=True,  # Add MixUp for more robustness
-    #     mixup_alpha=0.4,
+    #     use_mixup=False,
     #     use_wandb=True,
     #     wandb_project='alzheimers-convnext',
     #     wandb_entity='limpyrawnuk-the-university-of-queensland',
-    #     wandb_run_name='convnext-small-partial-pretrained',
-    #     save_dir='./checkpoints'
-    # )
-    
-    # OPTION 3: Full Pretrained (Aggressive - last resort)
-    # model, history = train(
-    #     data_dir='/home/groups/comp3710/ADNI/AD_NC',
-    #     model_name='convnext_small',
-    #     batch_size=32,
-    #     num_epochs=20,
-    #     learning_rate=3e-4,
-    #     dropout=0.5,
-    #     pretrained=True,
-    #     pretrain_stages='all',  # ← Full backbone
-    #     loss_type='label_smoothing',
-    #     label_smoothing=0.1,
-    #     use_mixup=True,
-    #     mixup_alpha=0.4,
-    #     use_wandb=True,
-    #     wandb_project='alzheimers-convnext',
-    #     wandb_entity='limpyrawnuk-the-university-of-queensland',
-    #     wandb_run_name='convnext-small-full-pretrained',
+    #     # Will create: small_scratch_cosine_j{jobid}_0127_1430
     #     save_dir='./checkpoints'
     # )

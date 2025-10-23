@@ -8,6 +8,7 @@ Features:
 - Optional MixUp augmentation
 - OneCycleLR scheduler
 - Early stopping
+- Weights & Biases (wandb) tracking
 - Comprehensive logging
 """
 
@@ -20,6 +21,7 @@ from torch.optim.lr_scheduler import OneCycleLR
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 import json
+import wandb
 
 from dataset import get_dataloaders
 from modules import get_model, get_loss_function, MixUpAugmentation
@@ -66,7 +68,7 @@ def train_one_epoch(model, train_loader, criterion, optimizer, scheduler, device
     
     pbar = tqdm(train_loader, desc=f'Epoch {epoch+1} [Train]')
     
-    for images, labels in pbar:
+    for batch_idx, (images, labels) in enumerate(pbar):
         images, labels = images.to(device), labels.to(device)
         
         # Apply MixUp if enabled
@@ -107,6 +109,15 @@ def train_one_epoch(model, train_loader, criterion, optimizer, scheduler, device
             'acc': f'{100.*correct/total:.2f}%',
             'lr': f'{current_lr:.2e}'
         })
+        
+        # Log to wandb every 10 batches
+        if batch_idx % 10 == 0:
+            wandb.log({
+                'train/batch_loss': loss.item(),
+                'train/batch_acc': 100. * correct / total,
+                'train/learning_rate': current_lr,
+                'train/step': epoch * len(train_loader) + batch_idx
+            })
     
     epoch_loss = running_loss / len(train_loader)
     epoch_acc = 100. * correct / total
@@ -128,6 +139,7 @@ def validate(model, val_loader, criterion, device, epoch):
     Returns:
         epoch_loss: Average validation loss
         epoch_acc: Validation accuracy
+        per_class_acc: Dictionary with per-class accuracies
     """
     model.eval()
     running_loss = 0.0
@@ -170,12 +182,21 @@ def validate(model, val_loader, criterion, device, epoch):
     epoch_loss = running_loss / len(val_loader)
     epoch_acc = 100. * correct / total
     
+    # Calculate per-class accuracies
+    nc_acc = 100. * class_correct[0] / class_total[0] if class_total[0] > 0 else 0
+    ad_acc = 100. * class_correct[1] / class_total[1] if class_total[1] > 0 else 0
+    
     # Print per-class accuracy
     print(f"\n  Per-class accuracy:")
-    print(f"    NC: {100.*class_correct[0]/class_total[0]:.2f}% ({class_correct[0]}/{class_total[0]})")
-    print(f"    AD: {100.*class_correct[1]/class_total[1]:.2f}% ({class_correct[1]}/{class_total[1]})")
+    print(f"    NC: {nc_acc:.2f}% ({class_correct[0]}/{class_total[0]})")
+    print(f"    AD: {ad_acc:.2f}% ({class_correct[1]}/{class_total[1]})")
     
-    return epoch_loss, epoch_acc
+    per_class_acc = {
+        'NC': nc_acc,
+        'AD': ad_acc
+    }
+    
+    return epoch_loss, epoch_acc, per_class_acc
 
 
 def plot_training_curves(train_losses, train_accs, val_losses, val_accs, save_path='training_curves.png'):
@@ -207,6 +228,8 @@ def plot_training_curves(train_losses, train_accs, val_losses, val_accs, save_pa
     plt.savefig(save_path, dpi=150, bbox_inches='tight')
     print(f"\n✓ Training curves saved to {save_path}")
     plt.close()
+    
+    return fig
 
 
 def train(
@@ -233,12 +256,18 @@ def train(
     use_mixup=False,
     mixup_alpha=0.4,
     
+    # Wandb parameters
+    use_wandb=True,
+    wandb_project='alzheimers-convnext',
+    wandb_entity=None,  # Your wandb username or team name
+    wandb_run_name=None,  # Optional custom run name
+    
     # Other
     save_dir='./checkpoints',
     patience=10
 ):
     """
-    Main training function
+    Main training function with wandb integration
     
     Args:
         data_dir: Path to ADNI dataset
@@ -248,36 +277,74 @@ def train(
         model_name: 'convnext_tiny', 'convnext_small', or 'convnext_base'
         dropout: Dropout rate
         pretrained: Whether to use pretrained weights
-        pretrain_stages: 'all', 'early', or 'stem'
-        num_epochs: Maximum number of epochs
-        learning_rate: Base learning rate
-        weight_decay: Weight decay for AdamW
-        loss_type: 'label_smoothing' or 'cross_entropy'
-        label_smoothing: Smoothing parameter
+        pretrain_stages: Which stages to pretrain ('all', 'early', 'stem')
+        num_epochs: Number of training epochs
+        learning_rate: Learning rate
+        weight_decay: Weight decay
+        loss_type: Loss function type
+        label_smoothing: Label smoothing parameter
         use_mixup: Whether to use MixUp augmentation
         mixup_alpha: MixUp alpha parameter
+        use_wandb: Whether to use Weights & Biases tracking
+        wandb_project: wandb project name
+        wandb_entity: wandb entity (username or team)
+        wandb_run_name: Optional custom run name
         save_dir: Directory to save checkpoints
         patience: Early stopping patience
     
     Returns:
         model: Trained model
-        history: Training history
+        history: Training history dictionary
     """
-    
-    # Get SLURM JOB ID (if running on cluster)
-    job_id = os.environ.get('SLURM_JOB_ID', 'local')
     
     # Create save directory
     os.makedirs(save_dir, exist_ok=True)
     
+    # Get job ID from SLURM or use timestamp
+    job_id = os.environ.get('SLURM_JOB_ID', f'local_{int(time.time())}')
+    
+    # Initialize wandb
+    if use_wandb:
+        # Create config dictionary for wandb
+        config = {
+            'job_id': job_id,
+            'model_name': model_name,
+            'batch_size': batch_size,
+            'num_epochs': num_epochs,
+            'learning_rate': learning_rate,
+            'weight_decay': weight_decay,
+            'dropout': dropout,
+            'pretrained': pretrained,
+            'pretrain_stages': pretrain_stages if pretrained else None,
+            'loss_type': loss_type,
+            'label_smoothing': label_smoothing if loss_type == 'label_smoothing' else None,
+            'use_mixup': use_mixup,
+            'mixup_alpha': mixup_alpha if use_mixup else None,
+            'img_size': img_size,
+            'num_workers': num_workers,
+            'patience': patience,
+        }
+        
+        # Initialize wandb run
+        wandb.init(
+            project=wandb_project,
+            entity=wandb_entity,
+            name=wandb_run_name or f"{model_name}_job{job_id}",
+            config=config,
+            tags=[model_name, 'from_scratch' if not pretrained else 'pretrained'],
+        )
+        
+        print(f"\n✓ Wandb initialized: {wandb.run.name}")
+        print(f"✓ View run at: {wandb.run.url}\n")
+    
     # Get device
     device = get_device()
-    print(f"Job ID: {job_id}\n")
     
-    # Load data
+    # Create datasets and loaders
+    print("\n" + "="*80)
+    print("DATA LOADING")
     print("="*80)
-    print("LOADING DATA")
-    print("="*80)
+    
     train_loader, test_loader = get_dataloaders(
         data_dir=data_dir,
         batch_size=batch_size,
@@ -286,13 +353,14 @@ def train(
     )
     
     # Create model
+    print("\n" + "="*80)
+    print("MODEL CREATION")
     print("="*80)
-    print("CREATING MODEL")
-    print("="*80)
+    
     model = get_model(
         model_name=model_name,
-        in_chans=1,  # Grayscale input
-        num_classes=2,  # AD vs NC
+        in_chans=1,
+        num_classes=2,
         dropout=dropout,
         pretrained=pretrained,
         pretrain_stages=pretrain_stages if pretrained else 'all'
@@ -311,6 +379,14 @@ def train(
         print(f"Pretrained: Yes (stages={pretrain_stages})")
     else:
         print(f"Pretrained: No (training from scratch)")
+    
+    # Log model info to wandb
+    if use_wandb:
+        wandb.config.update({
+            'total_params': total_params,
+            'trainable_params': trainable_params,
+        })
+        wandb.watch(model, log='all', log_freq=100)
     
     # Loss function
     print("\n" + "="*80)
@@ -346,8 +422,8 @@ def train(
     print(f"Optimizer: AdamW (lr={learning_rate}, weight_decay={weight_decay})")
     print(f"Scheduler: OneCycleLR (max_lr={learning_rate*10})")
     
-    # Save configuration
-    config = {
+    # Save local configuration
+    config_dict = {
         'job_id': job_id,
         'model_name': model_name,
         'batch_size': batch_size,
@@ -367,7 +443,7 @@ def train(
     
     config_path = os.path.join(save_dir, f'config_job{job_id}.json')
     with open(config_path, 'w') as f:
-        json.dump(config, f, indent=2)
+        json.dump(config_dict, f, indent=2)
     print(f"\n✓ Config saved to {config_path}")
     
     # Training history
@@ -391,7 +467,7 @@ def train(
         )
         
         # Validate
-        val_loss, val_acc = validate(
+        val_loss, val_acc, per_class_acc = validate(
             model, test_loader, criterion, device, epoch
         )
         
@@ -403,6 +479,19 @@ def train(
         
         # Get current learning rate
         current_lr = optimizer.param_groups[0]['lr']
+        
+        # Log to wandb
+        if use_wandb:
+            wandb.log({
+                'epoch': epoch + 1,
+                'train/loss': train_loss,
+                'train/accuracy': train_acc,
+                'val/loss': val_loss,
+                'val/accuracy': val_acc,
+                'val/nc_accuracy': per_class_acc['NC'],
+                'val/ad_accuracy': per_class_acc['AD'],
+                'learning_rate': current_lr,
+            })
         
         # Print epoch summary
         print(f"\n{'='*80}")
@@ -427,9 +516,23 @@ def train(
                 'optimizer_state_dict': optimizer.state_dict(),
                 'val_acc': val_acc,
                 'val_loss': val_loss,
-                'config': config,
+                'config': config_dict,
             }, checkpoint_path)
             print(f"✓ New best model saved! Val Acc: {val_acc:.2f}%\n")
+            
+            # Save best model to wandb
+            if use_wandb:
+                wandb.run.summary["best_val_acc"] = best_val_acc
+                wandb.run.summary["best_epoch"] = best_epoch
+                
+                # Save model as wandb artifact
+                artifact = wandb.Artifact(
+                    name=f'model-job{job_id}',
+                    type='model',
+                    description=f'Best model with {best_val_acc:.2f}% validation accuracy'
+                )
+                artifact.add_file(checkpoint_path)
+                wandb.log_artifact(artifact)
         else:
             patience_counter += 1
             print(f"No improvement ({patience_counter}/{patience} patience)\n")
@@ -462,22 +565,40 @@ def train(
     
     # Plot training curves
     curves_path = os.path.join(save_dir, f'training_curves_job{job_id}.png')
-    plot_training_curves(train_losses, train_accs, val_losses, val_accs, save_path=curves_path)
+    fig = plot_training_curves(train_losses, train_accs, val_losses, val_accs, save_path=curves_path)
+    
+    # Log training curves to wandb
+    if use_wandb:
+        wandb.log({"training_curves": wandb.Image(fig)})
+        
+        # Log final metrics
+        wandb.run.summary["final_train_acc"] = train_accs[-1]
+        wandb.run.summary["final_val_acc"] = val_accs[-1]
+        wandb.run.summary["total_time_minutes"] = total_time / 60
+        wandb.run.summary["total_epochs_trained"] = epoch + 1
     
     # Update config with final results
-    config['best_val_acc'] = best_val_acc
-    config['best_epoch'] = best_epoch
-    config['total_epochs'] = epoch + 1
-    config['total_time_minutes'] = total_time / 60
-    config['total_time_hours'] = total_time / 3600
+    config_dict['best_val_acc'] = best_val_acc
+    config_dict['best_epoch'] = best_epoch
+    config_dict['total_epochs'] = epoch + 1
+    config_dict['total_time_minutes'] = total_time / 60
+    config_dict['total_time_hours'] = total_time / 3600
     
     with open(config_path, 'w') as f:
-        json.dump(config, f, indent=2)
+        json.dump(config_dict, f, indent=2)
     
     print(f"\n✓ Best model: best_model_job{job_id}.pth")
     print(f"✓ Config: config_job{job_id}.json")
     print(f"✓ Curves: training_curves_job{job_id}.png")
+    
+    if use_wandb:
+        print(f"✓ View results at: {wandb.run.url}")
+    
     print("="*80 + "\n")
+    
+    # Finish wandb run
+    if use_wandb:
+        wandb.finish()
     
     return model, {
         'train_losses': train_losses,
@@ -492,7 +613,7 @@ def train(
 if __name__ == '__main__':
     # Choose your training strategy:
     
-    # OPTION 1: From Scratch
+    # OPTION 1: From Scratch with wandb tracking
     model, history = train(
         data_dir='/home/groups/comp3710/ADNI/AD_NC',
         model_name='convnext_small',
@@ -504,6 +625,10 @@ if __name__ == '__main__':
         loss_type='label_smoothing',
         label_smoothing=0.1,
         use_mixup=False,
+        use_wandb=True,  # ← Enable wandb
+        wandb_project='alzheimers-convnext',
+        wandb_entity='limpyrawnuk-the-university-of-queensland',  # ← Your wandb team
+        wandb_run_name='convnext-small-from-scratch',  # ← Custom run name
         save_dir='./checkpoints'
     )
     
@@ -521,6 +646,10 @@ if __name__ == '__main__':
     #     label_smoothing=0.1,
     #     use_mixup=True,  # Add MixUp for more robustness
     #     mixup_alpha=0.4,
+    #     use_wandb=True,
+    #     wandb_project='alzheimers-convnext',
+    #     wandb_entity='limpyrawnuk-the-university-of-queensland',
+    #     wandb_run_name='convnext-small-partial-pretrained',
     #     save_dir='./checkpoints'
     # )
     
@@ -538,5 +667,9 @@ if __name__ == '__main__':
     #     label_smoothing=0.1,
     #     use_mixup=True,
     #     mixup_alpha=0.4,
+    #     use_wandb=True,
+    #     wandb_project='alzheimers-convnext',
+    #     wandb_entity='limpyrawnuk-the-university-of-queensland',
+    #     wandb_run_name='convnext-small-full-pretrained',
     #     save_dir='./checkpoints'
     # )

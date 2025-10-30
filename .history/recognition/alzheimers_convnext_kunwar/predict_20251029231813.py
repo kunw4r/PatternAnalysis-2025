@@ -19,7 +19,6 @@ import torch
 import torch.nn.functional as F
 import numpy as np
 import matplotlib.pyplot as plt
-import re
 from sklearn.metrics import (
     accuracy_score, 
     confusion_matrix, 
@@ -82,28 +81,6 @@ def load_checkpoint(checkpoint_path, device):
     model_name = config.get('model_name', 'convnext_small')
     dropout = config.get('dropout', 0.5)
     
-    # Try to infer model architecture from checkpoint weights if config is missing or wrong
-    state_dict = checkpoint.get('model_state_dict', {})
-    if state_dict:
-        # Check stem output channels to detect architecture
-        # ConvNeXt-Tiny/Small use 96, ConvNeXt-Base uses 128
-        stem_key = None
-        for k in state_dict.keys():
-            if 'stem' in k and 'weight' in k and len(state_dict[k].shape) == 4:
-                stem_key = k
-                break
-        
-        if stem_key:
-            inferred_dim = state_dict[stem_key].shape[0]
-            if inferred_dim == 96 and model_name not in ['convnext_tiny', 'convnext_small']:
-                print(f"⚠ Config says {model_name}, but checkpoint stem has {inferred_dim} channels (Tiny/Small)")
-                model_name = 'convnext_small'
-                print(f"  → Auto-corrected to {model_name}")
-            elif inferred_dim == 128 and model_name != 'convnext_base':
-                print(f"⚠ Config says {model_name}, but checkpoint stem has {inferred_dim} channels (Base)")
-                model_name = 'convnext_base'
-                print(f"  → Auto-corrected to {model_name}")
-    
     print(f"\nModel: {model_name}")
     print(f"Dropout: {dropout}")
     
@@ -117,65 +94,7 @@ def load_checkpoint(checkpoint_path, device):
     )
     
     # Load weights
-    try:
-        model.load_state_dict(checkpoint['model_state_dict'])
-    except Exception as e:
-        print('\n⚠ Warning: direct load_state_dict failed — attempting smart remap of keys...')
-
-        def remap_and_filter(sd: dict, target_sd: dict):
-            new_sd = {}
-            skipped = []
-            for k, v in sd.items():
-                nk = k
-                # Specific mappings from saved naming to our naming
-                nk = re.sub(r'^backbone\.stem\.0\.', 'downsample_layers.0.0.', nk)
-                nk = re.sub(r'^backbone\.stem\.1\.', 'downsample_layers.0.1.', nk)
-                nk = re.sub(r'^backbone\.stages\.([0-9]+)\.downsample\.([0-9]+)\.', r'downsample_layers.\1.\2.', nk)
-                nk = re.sub(r'backbone\.stages\.([0-9]+)\.blocks\.([0-9]+)\.conv_dw\.', r'stages.\1.\2.dwconv.', nk)
-                nk = re.sub(r'backbone\.stages\.([0-9]+)\.blocks\.([0-9]+)\.norm\.', r'stages.\1.\2.norm.', nk)
-                nk = re.sub(r'backbone\.stages\.([0-9]+)\.blocks\.([0-9]+)\.mlp\.fc1\.', r'stages.\1.\2.pwconv1.', nk)
-                nk = re.sub(r'backbone\.stages\.([0-9]+)\.blocks\.([0-9]+)\.mlp\.fc2\.', r'stages.\1.\2.pwconv2.', nk)
-                nk = re.sub(r'backbone\.stages\.([0-9]+)\.blocks\.([0-9]+)\.gamma$', r'stages.\1.\2.gamma', nk)
-                nk = re.sub(r'^backbone\.head\.norm\.', 'norm.', nk)
-                nk = re.sub(r'^fc\.', 'head.', nk)
-                # final fallback: strip a leading 'backbone.' prefix if present
-                nk = re.sub(r'^backbone\.', '', nk)
-
-                if nk not in target_sd:
-                    skipped.append((k, nk, 'not in target'))
-                    continue
-
-                tgt_shape = target_sd[nk].shape
-                src_shape = v.shape
-
-                # If source is linear weights (2D) and target is conv1x1 weights (4D with last two dims 1)
-                if v.ndim == 2 and len(tgt_shape) == 4 and tgt_shape[2] == 1 and tgt_shape[3] == 1:
-                    try:
-                        v = v.view(tgt_shape)
-                    except Exception:
-                        skipped.append((k, nk, f'unable to reshape {src_shape} -> {tgt_shape}'))
-                        continue
-
-                # If shapes still mismatch, skip
-                if v.shape != tgt_shape:
-                    skipped.append((k, nk, f'shape mismatch {v.shape} != {tgt_shape}'))
-                    continue
-
-                new_sd[nk] = v
-
-            return new_sd, skipped
-
-        target_sd = model.state_dict()
-        remapped, skipped = remap_and_filter(checkpoint['model_state_dict'], target_sd)
-        print(f"Remapped {len(remapped)} tensors, skipped {len(skipped)} tensors")
-        if len(skipped) > 0:
-            # Print a few skipped examples
-            for s in skipped[:10]:
-                print(' - skipped:', s)
-
-        # Load remapped tensors into model (non-strict to allow missing keys)
-        load_res = model.load_state_dict(remapped, strict=False)
-        print('\n✓ Remap load completed. Missing keys (will be randomly initialised):', len(load_res.missing_keys))
+    model.load_state_dict(checkpoint['model_state_dict'])
     model = model.to(device)
     model.eval()
     

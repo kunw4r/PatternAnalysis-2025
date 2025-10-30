@@ -524,14 +524,26 @@ def main():
     parser.add_argument(
         '--num_workers',
         type=int,
-        default=4,
-        help='Number of data loading workers'
+        default=0,
+        help='Number of data loading workers (0=main process, safer for I/O issues)'
     )
     parser.add_argument(
         '--output_dir',
         type=str,
         default='./predictions',
         help='Directory to save prediction results'
+    )
+    parser.add_argument(
+        '--max_samples',
+        type=int,
+        default=None,
+        help='Maximum number of test samples to evaluate (None=all, useful for quick testing)'
+    )
+    parser.add_argument(
+        '--save_interval',
+        type=int,
+        default=100,
+        help='Save intermediate results every N batches to prevent data loss on timeout'
     )
     
     args = parser.parse_args()
@@ -562,12 +574,34 @@ def main():
         img_size=224
     )
     
+    # Optionally limit the number of test samples
+    if args.max_samples is not None:
+        print(f"\n⚠ Limiting evaluation to {args.max_samples} samples (--max_samples={args.max_samples})")
+        # Create a subset of the test dataset
+        from torch.utils.data import Subset
+        test_dataset = test_loader.dataset
+        indices = list(range(min(args.max_samples, len(test_dataset))))
+        test_dataset_subset = Subset(test_dataset, indices)
+        test_loader = torch.utils.data.DataLoader(
+            test_dataset_subset,
+            batch_size=args.batch_size,
+            shuffle=False,
+            num_workers=args.num_workers
+        )
+        print(f"Using {len(test_dataset_subset)} samples instead of {len(test_dataset)}")
+    
     # Run predictions
     print("\n" + "="*80)
     print("RUNNING PREDICTIONS")
     print("="*80 + "\n")
     
-    preds, labels, probs = predict_batch(model, test_loader, device)
+    preds, labels, probs = predict_batch(
+        model, 
+        test_loader, 
+        device, 
+        save_interval=args.save_interval,
+        output_dir=args.output_dir
+    )
     
     print(f"\n✓ Predictions complete!")
     print(f"  Total samples: {len(preds)}")

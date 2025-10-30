@@ -524,14 +524,20 @@ def main():
     parser.add_argument(
         '--num_workers',
         type=int,
-        default=4,
-        help='Number of data loading workers'
+        default=0,
+        help='Number of data loading workers (0=main process, safer for I/O issues)'
     )
     parser.add_argument(
         '--output_dir',
         type=str,
         default='./predictions',
         help='Directory to save prediction results'
+    )
+    parser.add_argument(
+        '--max_samples',
+        type=int,
+        default=None,
+        help='Maximum number of test samples to evaluate (None=all, useful for quick testing)'
     )
     
     args = parser.parse_args()

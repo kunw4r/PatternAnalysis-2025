@@ -82,28 +82,6 @@ def load_checkpoint(checkpoint_path, device):
     model_name = config.get('model_name', 'convnext_small')
     dropout = config.get('dropout', 0.5)
     
-    # Try to infer model architecture from checkpoint weights if config is missing or wrong
-    state_dict = checkpoint.get('model_state_dict', {})
-    if state_dict:
-        # Check stem output channels to detect architecture
-        # ConvNeXt-Tiny/Small use 96, ConvNeXt-Base uses 128
-        stem_key = None
-        for k in state_dict.keys():
-            if 'stem' in k and 'weight' in k and len(state_dict[k].shape) == 4:
-                stem_key = k
-                break
-        
-        if stem_key:
-            inferred_dim = state_dict[stem_key].shape[0]
-            if inferred_dim == 96 and model_name not in ['convnext_tiny', 'convnext_small']:
-                print(f"⚠ Config says {model_name}, but checkpoint stem has {inferred_dim} channels (Tiny/Small)")
-                model_name = 'convnext_small'
-                print(f"  → Auto-corrected to {model_name}")
-            elif inferred_dim == 128 and model_name != 'convnext_base':
-                print(f"⚠ Config says {model_name}, but checkpoint stem has {inferred_dim} channels (Base)")
-                model_name = 'convnext_base'
-                print(f"  → Auto-corrected to {model_name}")
-    
     print(f"\nModel: {model_name}")
     print(f"Dropout: {dropout}")
     

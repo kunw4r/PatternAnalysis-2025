@@ -185,14 +185,16 @@ def load_checkpoint(checkpoint_path, device):
     return model, checkpoint
 
 
-def predict_batch(model, dataloader, device):
+def predict_batch(model, dataloader, device, save_interval=100, output_dir='./predictions'):
     """
-    Run predictions on entire dataset
+    Run predictions on entire dataset with periodic checkpointing
     
     Args:
         model: Trained model
         dataloader: DataLoader
         device: Device
+        save_interval: Save progress every N batches
+        output_dir: Directory to save intermediate results
     
     Returns:
         all_preds: Predicted classes
@@ -205,20 +207,94 @@ def predict_batch(model, dataloader, device):
     all_labels = []
     all_probs = []
     
+    # Create checkpoint directory
+    os.makedirs(output_dir, exist_ok=True)
+    checkpoint_file = os.path.join(output_dir, 'prediction_progress.pkl')
+    
+    # Try to load existing progress
+    start_batch = 0
+    if os.path.exists(checkpoint_file):
+        try:
+            import pickle
+            with open(checkpoint_file, 'rb') as f:
+                saved_data = pickle.load(f)
+                all_preds = saved_data['preds']
+                all_labels = saved_data['labels']
+                all_probs = saved_data['probs']
+                start_batch = saved_data['batch_idx']
+                print(f"\n✓ Resumed from batch {start_batch} (already processed {len(all_preds)} samples)")
+        except Exception as e:
+            print(f"\n⚠ Could not load checkpoint: {e}")
+            start_batch = 0
+    
     print("Running predictions...")
+    batch_count = 0
+    
     with torch.no_grad():
-        for images, labels in tqdm(dataloader, desc='Predicting'):
-            images = images.to(device)
-            
-            # Forward pass
-            outputs = model(images)
-            probs = F.softmax(outputs, dim=1)
-            _, predicted = outputs.max(1)
-            
-            # Store results
-            all_preds.extend(predicted.cpu().numpy())
-            all_labels.extend(labels.numpy())
-            all_probs.extend(probs.cpu().numpy())
+        for batch_idx, (images, labels) in enumerate(tqdm(dataloader, desc='Predicting')):
+            # Skip already processed batches
+            if batch_idx < start_batch:
+                continue
+                
+            try:
+                images = images.to(device)
+                
+                # Forward pass
+                outputs = model(images)
+                probs = F.softmax(outputs, dim=1)
+                _, predicted = outputs.max(1)
+                
+                # Store results
+                all_preds.extend(predicted.cpu().numpy())
+                all_labels.extend(labels.numpy())
+                all_probs.extend(probs.cpu().numpy())
+                
+                batch_count += 1
+                
+                # Periodic checkpoint save
+                if batch_count % save_interval == 0:
+                    import pickle
+                    checkpoint_data = {
+                        'preds': all_preds,
+                        'labels': all_labels,
+                        'probs': all_probs,
+                        'batch_idx': batch_idx + 1
+                    }
+                    with open(checkpoint_file, 'wb') as f:
+                        pickle.dump(checkpoint_data, f)
+                    print(f"\n✓ Progress saved at batch {batch_idx + 1} ({len(all_preds)} samples)")
+                    
+            except TimeoutError as e:
+                print(f"\n⚠ TimeoutError at batch {batch_idx}: {e}")
+                print(f"Saving progress and continuing...")
+                import pickle
+                checkpoint_data = {
+                    'preds': all_preds,
+                    'labels': all_labels,
+                    'probs': all_probs,
+                    'batch_idx': batch_idx
+                }
+                with open(checkpoint_file, 'wb') as f:
+                    pickle.dump(checkpoint_data, f)
+                continue
+            except Exception as e:
+                print(f"\n⚠ Error at batch {batch_idx}: {e}")
+                print(f"Saving progress and continuing...")
+                import pickle
+                checkpoint_data = {
+                    'preds': all_preds,
+                    'labels': all_labels,
+                    'probs': all_probs,
+                    'batch_idx': batch_idx
+                }
+                with open(checkpoint_file, 'wb') as f:
+                    pickle.dump(checkpoint_data, f)
+                continue
+    
+    # Final save and cleanup
+    if os.path.exists(checkpoint_file):
+        os.remove(checkpoint_file)
+        print(f"\n✓ Checkpoint file removed (processing complete)")
     
     return np.array(all_preds), np.array(all_labels), np.array(all_probs)
 
@@ -524,14 +600,26 @@ def main():
     parser.add_argument(
         '--num_workers',
         type=int,
-        default=4,
-        help='Number of data loading workers'
+        default=0,
+        help='Number of data loading workers (0=main process, safer for I/O issues)'
     )
     parser.add_argument(
         '--output_dir',
         type=str,
         default='./predictions',
         help='Directory to save prediction results'
+    )
+    parser.add_argument(
+        '--max_samples',
+        type=int,
+        default=None,
+        help='Maximum number of test samples to evaluate (None=all, useful for quick testing)'
+    )
+    parser.add_argument(
+        '--save_interval',
+        type=int,
+        default=100,
+        help='Save intermediate results every N batches to prevent data loss on timeout'
     )
     
     args = parser.parse_args()
@@ -562,12 +650,34 @@ def main():
         img_size=224
     )
     
+    # Optionally limit the number of test samples
+    if args.max_samples is not None:
+        print(f"\n⚠ Limiting evaluation to {args.max_samples} samples (--max_samples={args.max_samples})")
+        # Create a subset of the test dataset
+        from torch.utils.data import Subset
+        test_dataset = test_loader.dataset
+        indices = list(range(min(args.max_samples, len(test_dataset))))
+        test_dataset_subset = Subset(test_dataset, indices)
+        test_loader = torch.utils.data.DataLoader(
+            test_dataset_subset,
+            batch_size=args.batch_size,
+            shuffle=False,
+            num_workers=args.num_workers
+        )
+        print(f"Using {len(test_dataset_subset)} samples instead of {len(test_dataset)}")
+    
     # Run predictions
     print("\n" + "="*80)
     print("RUNNING PREDICTIONS")
     print("="*80 + "\n")
     
-    preds, labels, probs = predict_batch(model, test_loader, device)
+    preds, labels, probs = predict_batch(
+        model, 
+        test_loader, 
+        device, 
+        save_interval=args.save_interval,
+        output_dir=args.output_dir
+    )
     
     print(f"\n✓ Predictions complete!")
     print(f"  Total samples: {len(preds)}")

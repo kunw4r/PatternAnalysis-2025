@@ -24,7 +24,6 @@ from tqdm import tqdm
 import json
 import wandb
 
-
 from dataset import get_dataloaders
 from modules import get_model, get_loss_function, MixUpAugmentation
 
@@ -466,8 +465,7 @@ def train(
     print("DATA LOADING")
     print("="*80)
     
-    # FIXED: Now unpacks 3 loaders instead of 2
-    train_loader, val_loader, test_loader = get_dataloaders(
+    train_loader, test_loader = get_dataloaders(
         data_dir=data_dir,
         batch_size=batch_size,
         num_workers=num_workers,
@@ -611,9 +609,9 @@ def train(
             epoch, use_mixup, mixup, scheduler_type
         )
         
-        # Validate - FIXED: Now uses val_loader instead of test_loader
+        # Validate
         val_loss, val_acc, per_class_acc = validate(
-            model, val_loader, criterion, device, epoch
+            model, test_loader, criterion, device, epoch
         )
         
         # Step scheduler per epoch for CosineAnnealingLR

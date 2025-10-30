@@ -562,12 +562,34 @@ def main():
         img_size=224
     )
     
+    # Optionally limit the number of test samples
+    if args.max_samples is not None:
+        print(f"\n⚠ Limiting evaluation to {args.max_samples} samples (--max_samples={args.max_samples})")
+        # Create a subset of the test dataset
+        from torch.utils.data import Subset
+        test_dataset = test_loader.dataset
+        indices = list(range(min(args.max_samples, len(test_dataset))))
+        test_dataset_subset = Subset(test_dataset, indices)
+        test_loader = torch.utils.data.DataLoader(
+            test_dataset_subset,
+            batch_size=args.batch_size,
+            shuffle=False,
+            num_workers=args.num_workers
+        )
+        print(f"Using {len(test_dataset_subset)} samples instead of {len(test_dataset)}")
+    
     # Run predictions
     print("\n" + "="*80)
     print("RUNNING PREDICTIONS")
     print("="*80 + "\n")
     
-    preds, labels, probs = predict_batch(model, test_loader, device)
+    preds, labels, probs = predict_batch(
+        model, 
+        test_loader, 
+        device, 
+        save_interval=args.save_interval,
+        output_dir=args.output_dir
+    )
     
     print(f"\n✓ Predictions complete!")
     print(f"  Total samples: {len(preds)}")

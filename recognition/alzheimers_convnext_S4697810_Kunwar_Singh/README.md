@@ -576,6 +576,12 @@ class FocalLoss(nn.Module):
 | 7 | 1_tiny_onecycle | 78.56 | 78.45 | 0.783 |
 | 8 | 7_small_mixup | 78.12 | 77.92 | 0.778 |
 
+**⚠️ Important Note on Metrics:**
+- **Validation Accuracy:** Computed at **slice-level** during training (individual MRI slices)
+- **Test Accuracy:** Computed at **patient-level** using majority voting across all slices per patient
+- The `predict.py` script reports **both** slice-level and patient-level test accuracy for comprehensive evaluation
+- Patient-level is the clinically meaningful metric (diagnosing patients, not individual images)
+
 ### Test Set Evaluation
 
 **Best Model: 4_base_pretrained**
@@ -670,6 +676,12 @@ AD Accuracy: 83.21%
    - Rangpur storage limit (8GB) restricted experiment count
    - Longer training runs could improve some models
 
+5. **Validation Metric Mismatch:**
+   - **Validation accuracy computed at slice-level (80.58%)**
+   - **Test accuracy computed at patient-level (73.87%)**
+   - Training optimizes for slice classification, but clinical diagnosis requires patient-level prediction
+   - This creates a ~7% performance gap between validation and test metrics
+
 ---
 
 ## Reproducibility
@@ -759,31 +771,49 @@ alzheimers_convnext_kunwar/
 
 ## Potential Improvements
 
-1. **Expand Dataset:**
+1. **Patient-Level Validation During Training:**
+   - **Current issue:** Validation accuracy is computed on individual slices (~80%), but test accuracy uses patient-level aggregation (~74%)
+   - **Proposed solution:** Implement patient-level validation in `train.py`:
+     - Group validation slices by patient ID
+     - Aggregate predictions via majority voting (like `predict.py` does)
+     - Compute accuracy on patients, not slices
+   - **Benefits:**
+     - Validation metrics match test methodology
+     - Model selection based on clinically relevant metric
+     - Early stopping decisions align with patient diagnosis performance
+     - More realistic estimate of model generalization
+
+2. **Expand Dataset:**
    - Include MCI (Mild Cognitive Impairment) class
    - More diverse patient demographics
    - Longitudinal data for progression tracking
 
-2. **3D Volumetric Analysis:**
+3. **3D Volumetric Analysis:**
    - Use 3D ConvNeXt variants
    - Capture full brain structure context
 
-3. **Ensemble Methods:**
+4. **Ensemble Methods:**
    - Combine multiple ConvNeXt variants
    - Majority voting across models
 
-4. **Advanced Augmentation:**
+5. **Advanced Augmentation:**
    - Elastic deformations
    - CutMix instead of MixUp
    - Test-time augmentation (TTA)
 
-5. **Explainability:**
+6. **Explainability:**
    - Grad-CAM visualizations
    - Attention maps showing which brain regions influence predictions
 
-6. **Clinical Integration:**
+7. **Clinical Integration:**
    - Combine MRI features with clinical metadata (age, APOE genotype)
    - Multi-modal fusion with PET scans
+
+8. **Slice-Level vs Patient-Level Analysis:**
+   - Report both metrics in all evaluations:
+     - **Slice-level:** Useful for understanding per-image performance
+     - **Patient-level:** Clinically meaningful diagnostic accuracy
+   - Current `predict.py` already computes both - extend to training validation
 
 ---
 

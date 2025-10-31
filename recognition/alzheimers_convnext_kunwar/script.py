@@ -1,5 +1,5 @@
 """
-Visualize latent space using t-SNE
+Visualise latent space using t-SNE
 """
 
 import torch
@@ -44,8 +44,8 @@ def extract_features(model, loader, device):
     return features, labels
 
 
-def visualize_latent_space(checkpoint_path='./checkpoints/best_model.pth'):
-    """Create t-SNE visualization of latent space"""
+def visualise_latent_space(checkpoint_path='./checkpoints/best_model.pth'):
+    """Create t-SNE visualisation of latent space"""
     
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
@@ -68,7 +68,7 @@ def visualize_latent_space(checkpoint_path='./checkpoints/best_model.pth'):
     print("Extracting test features...")
     test_features, test_labels = extract_features(model, test_loader, device)
     
-    # Sample subset for visualization (t-SNE is slow)
+    # Sample subset for visualisation (t-SNE is slow)
     n_samples = 2000
     train_idx = np.random.choice(len(train_features), min(n_samples, len(train_features)), replace=False)
     test_idx = np.random.choice(len(test_features), min(n_samples, len(test_features)), replace=False)
@@ -108,8 +108,8 @@ def visualize_latent_space(checkpoint_path='./checkpoints/best_model.pth'):
     ax2.grid(True, alpha=0.3)
     
     plt.tight_layout()
-    plt.savefig('latent_space_visualization.png', dpi=150)
-    print("Saved latent_space_visualization.png")
+    plt.savefig('latent_space_visualisation.png', dpi=150)
+    print("Saved latent_space_visualisation.png")
     plt.close()
     
     # Check separability
@@ -143,7 +143,7 @@ def visualize_latent_space(checkpoint_path='./checkpoints/best_model.pth'):
     if train_ad_var > test_ad_var * 1.5:
         print("\n⚠ WARNING: Train AD samples are MORE spread out than test AD samples")
         print("   This suggests the model memorized diverse AD patterns in training")
-        print("   but can't generalize to unseen AD cases!")
+        print("   but can't generalise to unseen AD cases!")
     
     if train_separation > test_separation * 1.2:
         print("\n⚠ WARNING: Classes are BETTER separated in training than testing")
@@ -151,4 +151,4 @@ def visualize_latent_space(checkpoint_path='./checkpoints/best_model.pth'):
 
 
 if __name__ == '__main__':
-    visualize_latent_space()
+    visualise_latent_space()

@@ -512,14 +512,14 @@ def save_predictions_log(metrics, checkpoint_info, save_path='predictions.log'):
 def visualise_random_predictions(model, data_dir, device, num_samples=60,
                                  save_dir='predictions_vis'):
     """
-    Visualize predictions on random test samples
+    Visualise predictions on random test samples
     
     Args:
         model: Trained model
         data_dir: Path to dataset
         device: Device
-        num_samples: Number of random samples to visualize
-        save_dir: Directory to save visualizations
+        num_samples: Number of random samples to visualise
+        save_dir: Directory to save visualisations
     """
     import random
     from PIL import Image
@@ -553,7 +553,7 @@ def visualise_random_predictions(model, data_dir, device, num_samples=60,
     transform = transforms.Compose([
         transforms.Resize((224, 224)),
         transforms.ToTensor(),
-        transforms.Normalize(mean=[0.5], std=[0.5])
+        transforms.Normalise(mean=[0.5], std=[0.5])
     ])
     
     # Run predictions
@@ -582,7 +582,7 @@ def visualise_random_predictions(model, data_dir, device, num_samples=60,
     correct = sum(1 for p in predictions if p['true_label'] == p['pred_label'])
     accuracy = correct / len(predictions) * 100
     
-    # Visualize
+    # Visualise
     label_names = {0: 'NC', 1: 'AD'}
     samples_per_page = 20
     num_pages = (len(predictions) + samples_per_page - 1) // samples_per_page
@@ -624,8 +624,8 @@ def visualise_random_predictions(model, data_dir, device, num_samples=60,
         plt.savefig(output_path, dpi=150, bbox_inches='tight')
         plt.close()
     
-    print(f"✓ Random sample visualizations saved to {save_dir}/")
-    print(f"  {len(predictions)} samples visualized with {accuracy:.2f}% accuracy")
+    print(f"✓ Random sample visualisations saved to {save_dir}/")
+    print(f"  {len(predictions)} samples visualised with {accuracy:.2f}% accuracy")
 
 
 def main():

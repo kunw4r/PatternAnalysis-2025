@@ -43,7 +43,7 @@ def get_device():
     return device
 
 
-def train_one_epoch(model, train_loader, criterion, optimizer, scheduler, device, 
+def train_one_epoch(model, train_loader, criterion, optimiser, scheduler, device, 
                     epoch, use_mixup=False, mixup=None, scheduler_type='onecycle'):
     """
     Train for one epoch
@@ -52,7 +52,7 @@ def train_one_epoch(model, train_loader, criterion, optimizer, scheduler, device
         model: ConvNeXt model
         train_loader: Training data loader
         criterion: Loss function
-        optimizer: Optimizer
+        optimiser: Optimiser
         scheduler: Learning rate scheduler
         device: Device to train on
         epoch: Current epoch number
@@ -79,14 +79,14 @@ def train_one_epoch(model, train_loader, criterion, optimizer, scheduler, device
             images, labels_a, labels_b, lam = mixup.mixup_data(images, labels)
             
             # Forward pass
-            optimizer.zero_grad()
+            optimiser.zero_grad()
             outputs = model(images)
             
             # MixUp loss
             loss = mixup.mixup_criterion(criterion, outputs, labels_a, labels_b, lam)
         else:
             # Standard forward pass
-            optimizer.zero_grad()
+            optimiser.zero_grad()
             outputs = model(images)
             loss = criterion(outputs, labels)
         
@@ -96,7 +96,7 @@ def train_one_epoch(model, train_loader, criterion, optimizer, scheduler, device
         # Gradient clipping for stability
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         
-        optimizer.step()
+        optimiser.step()
         
         # Step scheduler per batch for OneCycleLR
         if scheduler_type == 'onecycle':
@@ -109,7 +109,7 @@ def train_one_epoch(model, train_loader, criterion, optimizer, scheduler, device
         correct += predicted.eq(labels).sum().item()
         
         # Update progress bar
-        current_lr = optimizer.param_groups[0]['lr']
+        current_lr = optimiser.param_groups[0]['lr']
         pbar.set_postfix({
             'loss': f'{running_loss/(pbar.n+1):.4f}',
             'acc': f'{100.*correct/total:.2f}%',
@@ -400,7 +400,7 @@ def train(
     else:
         print(f"\n📝 Using custom run name: {wandb_run_name}")
     
-    # Initialize wandb
+    # Initialise wandb
     if use_wandb:
         # Create config dictionary for wandb
         config = {
@@ -446,7 +446,7 @@ def train(
         if use_mixup:
             tags.append('mixup')
         
-        # Initialize wandb run
+        # Initialise wandb run
         wandb.init(
             project=wandb_project,
             entity=wandb_entity,
@@ -522,8 +522,8 @@ def train(
         mixup = MixUpAugmentation(alpha=mixup_alpha)
         print(f"Using MixUp augmentation (alpha={mixup_alpha})")
     
-    # Optimizer
-    optimizer = optim.AdamW(
+    # Optimiser
+    optimiser = optim.AdamW(
         model.parameters(),
         lr=learning_rate,
         weight_decay=weight_decay
@@ -534,7 +534,7 @@ def train(
     
     if scheduler_type == 'onecycle':
         scheduler = OneCycleLR(
-            optimizer,
+            optimiser,
             max_lr=learning_rate * 10,  # Peak at 10x base LR
             steps_per_epoch=len(train_loader),
             epochs=num_epochs,
@@ -552,7 +552,7 @@ def train(
     elif scheduler_type == 'cosine':
         t_max = cosine_t_max or num_epochs
         scheduler = CosineAnnealingLR(
-            optimizer,
+            optimiser,
             T_max=t_max,
             eta_min=cosine_eta_min
         )
@@ -564,7 +564,7 @@ def train(
     else:
         raise ValueError(f"Unknown scheduler type: {scheduler_type}. Use 'onecycle' or 'cosine'")
     
-    print(f"\nOptimizer: AdamW (lr={learning_rate}, weight_decay={weight_decay})")
+    print(f"\nOptimiser: AdamW (lr={learning_rate}, weight_decay={weight_decay})")
     
     # Save local configuration
     config_dict = {
@@ -607,7 +607,7 @@ def train(
     for epoch in range(num_epochs):
         # Train
         train_loss, train_acc = train_one_epoch(
-            model, train_loader, criterion, optimizer, scheduler, device, 
+            model, train_loader, criterion, optimiser, scheduler, device, 
             epoch, use_mixup, mixup, scheduler_type
         )
         
@@ -627,7 +627,7 @@ def train(
         val_accs.append(val_acc)
         
         # Get current learning rate
-        current_lr = optimizer.param_groups[0]['lr']
+        current_lr = optimiser.param_groups[0]['lr']
         
         # Log to wandb
         if use_wandb:
@@ -662,7 +662,7 @@ def train(
                 'job_id': job_id,
                 'epoch': epoch + 1,
                 'model_state_dict': model.state_dict(),
-                'optimizer_state_dict': optimizer.state_dict(),
+                'optimiser_state_dict': optimiser.state_dict(),
                 'val_acc': val_acc,
                 'val_loss': val_loss,
                 'config': config_dict,

@@ -101,7 +101,7 @@ def get_transforms(split='train', img_size=224):
             transforms.RandomRotation(degrees=15),
             transforms.RandomAffine(degrees=0, translate=(0.1, 0.1), scale=(0.9, 1.1)),
             transforms.ToTensor(),
-            transforms.Normalize(mean=[0.5], std=[0.5]),
+            transforms.Normalise(mean=[0.5], std=[0.5]),
             transforms.RandomErasing(p=0.2, scale=(0.02, 0.1)),
         ])
     else:
@@ -109,7 +109,7 @@ def get_transforms(split='train', img_size=224):
         transform = transforms.Compose([
             transforms.Resize((img_size, img_size)),
             transforms.ToTensor(),
-            transforms.Normalize(mean=[0.5], std=[0.5]),
+            transforms.Normalise(mean=[0.5], std=[0.5]),
         ])
     
     return transform

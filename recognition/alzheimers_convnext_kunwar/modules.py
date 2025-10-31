@@ -225,7 +225,7 @@ class ConvNeXt(nn.Module):
         self.dropout = nn.Dropout(p=dropout_rate)
         self.head = nn.Linear(dims[-1], num_classes) if num_classes > 0 else nn.Identity()
         
-        # Initialize weights
+        # Initialise weights
         self.apply(self._init_weights)
         
         # Scale classifier head

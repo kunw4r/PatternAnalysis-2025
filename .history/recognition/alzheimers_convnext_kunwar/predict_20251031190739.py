@@ -738,19 +738,14 @@ def main():
     plot_roc_curve(metrics['fpr'], metrics['tpr'], metrics['roc_auc'], 
                    save_path=roc_path)
     
-    # Sample predictions from test loader
+    # Sample predictions
     samples_path = os.path.join(args.output_dir, 'sample_predictions.png')
     visualise_predictions(model, test_loader, device, num_samples=16,
                          save_path=samples_path)
     
-    # Random sample predictions (like visualise.py)
-    random_vis_dir = os.path.join(args.output_dir, 'random_samples')
-    visualise_random_predictions(model, args.data_dir, device, num_samples=60,
-                                 save_dir=random_vis_dir)
-    
-    # Save predictions log
+    # Save results to file
     print()
-    log_path = os.path.join(args.output_dir, 'predictions.log')
+    results_path = os.path.join(args.output_dir, 'results.txt')
     checkpoint_info = {
         'checkpoint_path': args.checkpoint,
         'job_id': checkpoint.get('job_id', 'N/A'),
@@ -758,17 +753,16 @@ def main():
         'model_name': checkpoint.get('config', {}).get('model_name', 'N/A'),
         'val_acc': checkpoint.get('val_acc', 0),
     }
-    save_predictions_log(metrics, checkpoint_info, save_path=log_path)
+    save_results(metrics, checkpoint_info, save_path=results_path)
     
     print("\n" + "="*80)
     print("PREDICTION COMPLETE!")
     print("="*80)
     print(f"\nAll results saved to: {args.output_dir}/")
-    print("  - predictions.log")
+    print("  - results.txt")
     print("  - confusion_matrix.png")
     print("  - roc_curve.png")
     print("  - sample_predictions.png")
-    print(f"  - random_samples/ (60 random test samples)")
     print("\n" + "="*80 + "\n")
 
 

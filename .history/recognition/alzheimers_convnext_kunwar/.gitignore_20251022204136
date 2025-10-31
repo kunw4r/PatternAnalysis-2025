@@ -9,8 +9,3 @@ __pycache__/
 *.pth
 *.pt
 checkpoints/
-results/
-logs/
-script.py
-visualise.py
-

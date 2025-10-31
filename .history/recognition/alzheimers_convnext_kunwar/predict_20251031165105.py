@@ -448,15 +448,11 @@ def visualise_predictions(model, dataloader, device, num_samples=16,
     plt.close()
 
 
-def save_predictions_log(metrics, checkpoint_info, save_path='predictions.log'):
-    """Save metrics to predictions log file"""
-    import datetime
-    
+def save_results(metrics, checkpoint_info, save_path='results.txt'):
+    """Save results to text file"""
     with open(save_path, 'w') as f:
         f.write("="*80 + "\n")
-        f.write("ALZHEIMER'S DISEASE CLASSIFICATION - PREDICTIONS LOG\n")
-        f.write("="*80 + "\n")
-        f.write(f"Generated: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+        f.write("ALZHEIMER'S DISEASE CLASSIFICATION RESULTS\n")
         f.write("="*80 + "\n\n")
         
         # Checkpoint info
@@ -498,134 +494,9 @@ def save_predictions_log(metrics, checkpoint_info, save_path='predictions.log'):
         f.write(f"Actual NC       {cm[0,0]:<15} {cm[0,1]:<15}\n")
         f.write(f"Actual AD       {cm[1,0]:<15} {cm[1,1]:<15}\n")
         
-        # Per-class accuracy
-        nc_acc = cm[0,0] / (cm[0,0] + cm[0,1]) * 100 if (cm[0,0] + cm[0,1]) > 0 else 0
-        ad_acc = cm[1,1] / (cm[1,0] + cm[1,1]) * 100 if (cm[1,0] + cm[1,1]) > 0 else 0
-        f.write(f"\nNC Accuracy: {nc_acc:.2f}%\n")
-        f.write(f"AD Accuracy: {ad_acc:.2f}%\n")
-        
         f.write("\n" + "="*80 + "\n")
     
-    print(f"✓ Predictions log saved to {save_path}")
-
-
-def visualise_random_predictions(model, data_dir, device, num_samples=60,
-                                 save_dir='predictions_vis'):
-    """
-    Visualize predictions on random test samples
-    
-    Args:
-        model: Trained model
-        data_dir: Path to dataset
-        device: Device
-        num_samples: Number of random samples to visualize
-        save_dir: Directory to save visualizations
-    """
-    import random
-    from PIL import Image
-    from torchvision import transforms
-    
-    print("Visualizing random predictions...")
-    
-    os.makedirs(save_dir, exist_ok=True)
-    
-    # Load random samples
-    test_dir = os.path.join(data_dir, 'test')
-    ad_dir = os.path.join(test_dir, 'AD')
-    nc_dir = os.path.join(test_dir, 'NC')
-    
-    # Get all image paths
-    ad_images = [os.path.join(ad_dir, f) for f in os.listdir(ad_dir) 
-                 if f.endswith(('.png', '.jpg', '.jpeg'))]
-    nc_images = [os.path.join(nc_dir, f) for f in os.listdir(nc_dir) 
-                 if f.endswith(('.png', '.jpg', '.jpeg'))]
-    
-    # Sample equally from both classes
-    samples_per_class = num_samples // 2
-    ad_samples = random.sample(ad_images, min(samples_per_class, len(ad_images)))
-    nc_samples = random.sample(nc_images, min(samples_per_class, len(nc_images)))
-    
-    # Combine and shuffle
-    all_samples = [(path, 1) for path in ad_samples] + [(path, 0) for path in nc_samples]
-    random.shuffle(all_samples)
-    
-    # Transform
-    transform = transforms.Compose([
-        transforms.Resize((224, 224)),
-        transforms.ToTensor(),
-        transforms.Normalize(mean=[0.5], std=[0.5])
-    ])
-    
-    # Run predictions
-    predictions = []
-    model.eval()
-    
-    for img_path, true_label in all_samples:
-        img = Image.open(img_path).convert('L')
-        img_tensor = transform(img).unsqueeze(0).to(device)
-        
-        with torch.no_grad():
-            output = model(img_tensor)
-            probs = F.softmax(output, dim=1)
-            pred_label = torch.argmax(probs, dim=1).item()
-            confidence = probs[0][pred_label].item()
-        
-        predictions.append({
-            'path': img_path,
-            'image': img,
-            'true_label': true_label,
-            'pred_label': pred_label,
-            'confidence': confidence
-        })
-    
-    # Calculate accuracy
-    correct = sum(1 for p in predictions if p['true_label'] == p['pred_label'])
-    accuracy = correct / len(predictions) * 100
-    
-    # Visualize
-    label_names = {0: 'NC', 1: 'AD'}
-    samples_per_page = 20
-    num_pages = (len(predictions) + samples_per_page - 1) // samples_per_page
-    
-    for page in range(num_pages):
-        start_idx = page * samples_per_page
-        end_idx = min(start_idx + samples_per_page, len(predictions))
-        page_preds = predictions[start_idx:end_idx]
-        
-        cols = 5
-        rows = (len(page_preds) + cols - 1) // cols
-        
-        fig, axes = plt.subplots(rows, cols, figsize=(20, 4*rows))
-        fig.suptitle(f'Random Sample Predictions (Page {page+1}/{num_pages})\nAccuracy: {accuracy:.2f}%',
-                     fontsize=16, fontweight='bold')
-        
-        if rows == 1:
-            axes = axes.reshape(1, -1)
-        axes = axes.flatten()
-        
-        for idx, pred in enumerate(page_preds):
-            ax = axes[idx]
-            ax.imshow(pred['image'], cmap='gray')
-            
-            true_label = label_names[pred['true_label']]
-            pred_label = label_names[pred['pred_label']]
-            confidence = pred['confidence'] * 100
-            
-            color = 'green' if pred['true_label'] == pred['pred_label'] else 'red'
-            title = f"True: {true_label} | Pred: {pred_label}\nConf: {confidence:.1f}%"
-            ax.set_title(title, fontsize=10, color=color, fontweight='bold')
-            ax.axis('off')
-        
-        for idx in range(len(page_preds), len(axes)):
-            axes[idx].axis('off')
-        
-        plt.tight_layout()
-        output_path = os.path.join(save_dir, f'random_predictions_page_{page+1}.png')
-        plt.savefig(output_path, dpi=150, bbox_inches='tight')
-        plt.close()
-    
-    print(f"✓ Random sample visualizations saved to {save_dir}/")
-    print(f"  {len(predictions)} samples visualized with {accuracy:.2f}% accuracy")
+    print(f"✓ Results saved to {save_path}")
 
 
 def main():
@@ -636,7 +507,7 @@ def main():
         '--checkpoint',
         type=str,
         default='results/base_onecycle_lr1e4_drop0.5_best.pth',
-        help='Path to model checkpoint (relative to script directory or absolute path)'
+        help='Path to model checkpoint'
     )
     parser.add_argument(
         '--data_dir',
@@ -665,21 +536,6 @@ def main():
     
     args = parser.parse_args()
     
-    # Resolve paths relative to script directory if not absolute
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    
-    # Resolve checkpoint path
-    if not os.path.isabs(args.checkpoint):
-        checkpoint_path = os.path.join(script_dir, args.checkpoint)
-        if os.path.exists(checkpoint_path):
-            args.checkpoint = checkpoint_path
-    
-    # Resolve data directory path
-    if not os.path.isabs(args.data_dir):
-        data_path = os.path.join(script_dir, args.data_dir)
-        if os.path.exists(data_path):
-            args.data_dir = data_path
-    
     # Create output directory
     os.makedirs(args.output_dir, exist_ok=True)
     
@@ -699,7 +555,7 @@ def main():
     print("LOADING TEST DATA")
     print("="*80)
     
-    _, _, test_loader = get_dataloaders(
+    _, test_loader = get_dataloaders(
         data_dir=args.data_dir,
         batch_size=args.batch_size,
         num_workers=args.num_workers,
@@ -738,19 +594,14 @@ def main():
     plot_roc_curve(metrics['fpr'], metrics['tpr'], metrics['roc_auc'], 
                    save_path=roc_path)
     
-    # Sample predictions from test loader
+    # Sample predictions
     samples_path = os.path.join(args.output_dir, 'sample_predictions.png')
     visualise_predictions(model, test_loader, device, num_samples=16,
                          save_path=samples_path)
     
-    # Random sample predictions (like visualise.py)
-    random_vis_dir = os.path.join(args.output_dir, 'random_samples')
-    visualise_random_predictions(model, args.data_dir, device, num_samples=60,
-                                 save_dir=random_vis_dir)
-    
-    # Save predictions log
+    # Save results to file
     print()
-    log_path = os.path.join(args.output_dir, 'predictions.log')
+    results_path = os.path.join(args.output_dir, 'results.txt')
     checkpoint_info = {
         'checkpoint_path': args.checkpoint,
         'job_id': checkpoint.get('job_id', 'N/A'),
@@ -758,17 +609,16 @@ def main():
         'model_name': checkpoint.get('config', {}).get('model_name', 'N/A'),
         'val_acc': checkpoint.get('val_acc', 0),
     }
-    save_predictions_log(metrics, checkpoint_info, save_path=log_path)
+    save_results(metrics, checkpoint_info, save_path=results_path)
     
     print("\n" + "="*80)
     print("PREDICTION COMPLETE!")
     print("="*80)
     print(f"\nAll results saved to: {args.output_dir}/")
-    print("  - predictions.log")
+    print("  - results.txt")
     print("  - confusion_matrix.png")
     print("  - roc_curve.png")
     print("  - sample_predictions.png")
-    print(f"  - random_samples/ (60 random test samples)")
     print("\n" + "="*80 + "\n")
 
 

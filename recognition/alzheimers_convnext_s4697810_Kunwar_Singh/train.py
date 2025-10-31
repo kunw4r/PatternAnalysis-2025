@@ -317,8 +317,10 @@ def train(
     cosine_eta_min=1e-6,        # CosineAnnealingLR: minimum lr
     
     # Loss and augmentation
-    loss_type='label_smoothing',  # 'label_smoothing' or 'cross_entropy'
+    loss_type='label_smoothing',  # 'label_smoothing', 'cross_entropy', or 'focal'
     label_smoothing=0.1,
+    focal_alpha=0.25,      # Focal loss alpha parameter
+    focal_gamma=2.0,       # Focal loss gamma parameter
     use_mixup=False,
     mixup_alpha=0.4,
     
@@ -410,6 +412,8 @@ def train(
             'scheduler_type': scheduler_type,
             'loss_type': loss_type,
             'label_smoothing': label_smoothing if loss_type == 'label_smoothing' else None,
+            'focal_alpha': focal_alpha if loss_type == 'focal' else None,
+            'focal_gamma': focal_gamma if loss_type == 'focal' else None,
             'use_mixup': use_mixup,
             'mixup_alpha': mixup_alpha if use_mixup else None,
             'img_size': img_size,
@@ -488,7 +492,12 @@ def train(
     print("\n" + "="*80)
     print("TRAINING SETUP")
     print("="*80)
-    criterion = get_loss_function(loss_type=loss_type, smoothing=label_smoothing)
+    criterion = get_loss_function(
+        loss_type=loss_type, 
+        smoothing=label_smoothing,
+        focal_alpha=focal_alpha,
+        focal_gamma=focal_gamma
+    )
     
     # MixUp
     mixup = None

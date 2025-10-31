@@ -1,6 +1,6 @@
 # Alzheimer's Disease Classification using ConvNeXt on ADNI MRI Dataset
 
-**Author:** Kunwar Singh (ss46978107)  
+**Author:** Kunwar Singh (s46978107)  
 **Course:** COMP3710 – Pattern Analysis (2025)  
 **Institution:** The University of Queensland  
 **HPC Cluster:** Rangpur (UQ)  
@@ -143,295 +143,88 @@ transforms.Compose([
 
 ## Model Architecture
 
-### ConvNeXt Overview: A ConvNet for the 2020s
+### ConvNeXt Overview
 
-ConvNeXt is a modern interpretation of convolutional neural networks (ConvNets), introduced by Liu et al. (2022) in their paper *"A ConvNet for the 2020s"*. It modernizes the classic ResNet architecture by incorporating design principles from Vision Transformers (ViTs) while maintaining the efficiency and simplicity of traditional CNNs.
+ConvNeXt is a modern convolutional neural network that reimagines classic CNNs by integrating successful design elements from Vision Transformers (ViTs) [[1]](#references). Developed by Facebook AI Research (Liu et al., 2022), it achieves state-of-the-art performance on image recognition while maintaining CNN efficiency—ideal for medical imaging with limited data.
 
-**Key Innovation:** ConvNeXt achieves state-of-the-art performance comparable to Swin Transformers while preserving the computational efficiency of convolutional networks, making it ideal for medical imaging tasks with limited data.
+**Key Innovation:** Bridges the gap between traditional CNNs (efficiency, hardware optimization) and Vision Transformers (flexible architectures, advanced normalization), achieving comparable accuracy to Swin Transformers with pure convolutions [[2]](#references).
 
-### Architecture Comparison: ResNet vs ConvNeXt vs Swin Transformer
+### Architecture Overview
 
-The table below shows how ConvNeXt bridges the gap between traditional CNNs (ResNet) and modern Vision Transformers (Swin-T):
+ConvNeXt follows a four-stage hierarchical structure, progressively reducing spatial resolution while increasing feature channels:
 
-| **Stage** | **Output Size** | **ResNet-50** | **ConvNeXt-T** | **Swin-T** |
-|-----------|-----------------|---------------|----------------|------------|
-| **stem** | 56×56 | 7×7, 64, stride 2<br>3×3 max pool, stride 2 | 4×4, 96, stride 4 | 4×4, 96, stride 4 |
-| **res2** | 56×56 | [1×1, 64]<br>[3×3, 64] × 3<br>[1×1, 256] | [d7×7, 96]<br>[1×1, 384] × 3<br>[1×1, 96] | [1×1, 96×3]<br>MSA, w7×7, H=3, rel. pos.<br>[1×1, 96]<br>[1×1, 384]<br>[1×1, 96]<br>× 2 |
-| **res3** | 28×28 | [1×1, 128]<br>[3×3, 128] × 4<br>[1×1, 512] | [d7×7, 192]<br>[1×1, 768] × 3<br>[1×1, 192] | Similar pattern × 2 |
-| **res4** | 14×14 | [1×1, 256]<br>[3×3, 256] × 6<br>[1×1, 1024] | [d7×7, 384]<br>[1×1, 1536] × 9<br>[1×1, 384] | Similar pattern × 6 |
-| **res5** | 7×7 | [1×1, 512]<br>[3×3, 512] × 3<br>[1×1, 2048] | [d7×7, 768]<br>[1×1, 3072] × 3<br>[1×1, 768] | Similar pattern × 2 |
-| **FLOPs** | | 4.1 × 10⁹ | 4.5 × 10⁹ | 4.5 × 10⁹ |
-| **# params** | | 25.6 × 10⁶ | 28.6 × 10⁶ | 28.3 × 10⁶ |
+![ConvNeXt Architecture](images/arch.png)
+*Figure 1: Complete ConvNeXt pipeline from input to classification. The network processes 224×224 grayscale MRI through four stages (3→3→9→3 blocks), with downsampling between stages, followed by global pooling and classification head [[2]](#references).*
 
-*Table: Architectural comparison showing ConvNeXt-T matches Swin Transformer complexity while using pure convolutions. d7×7 = depthwise 7×7 convolution, MSA = Multi-head Self-Attention.*
+![ConvNeXt Structure](images/struct.png)
+*Figure 2: Detailed stage-wise processing showing resolution changes (224→56→28→14→7) and channel expansion (3→96→192→384→768). ConvNeXt blocks extract hierarchical features at each stage [[2]](#references).*
 
-### Modernizing ResNet → ConvNeXt: Key Design Changes
+### ConvNeXt Block: Key Design Elements
 
-Liu et al. (2022) systematically modernized ResNet-50 into ConvNeXt through the following steps:
+The fundamental building block uses an **inverted bottleneck** design inspired by Transformers:
 
-| Modification | Change | Impact | Accuracy Gain |
-|--------------|--------|--------|---------------|
-| **1. Training Recipe** | 90→300 epochs, AdamW, Mixup, etc. | Better optimization | 76.1% → 78.8% |
-| **2. Patchify Stem** | 7×7 conv+pool → 4×4 conv (stride 4) | ViT-style embedding | 78.8% → 79.4% |
-| **3. ResNeXt-ify** | Standard conv → grouped conv | More efficient | 79.4% → 80.5% |
-| **4. Inverted Bottleneck** | Narrow→wide→narrow → wide→narrow | Like Transformers | 80.5% → 80.6% |
-| **5. Large Kernel (3×3→7×7)** | Depthwise 3×3 → Depthwise 7×7 | Larger receptive field | 80.6% → 81.6% |
-| **6. Micro Design** | ReLU→GELU, BN→LN, separate downsampling | Stabilization | 81.6% → 82.0% |
+![Block Comparison](images/comp.png)
+*Figure 3: Architectural comparison of Swin Transformer, ResNet, and ConvNeXt blocks. ConvNeXt adopts the inverted bottleneck structure (expand-then-compress) with depthwise 7×7 convolutions and modern normalization (LayerNorm + GELU) [[3]](#references).*
 
-**Cumulative improvement:** 76.1% → 82.0% (+5.9% on ImageNet-1K)
+**Core Components:**
+1. **Depthwise 7×7 Convolution:** Large receptive field for spatial feature extraction (processes each channel independently)
+2. **Layer Normalization:** Better training stability than BatchNorm, especially on small medical datasets
+3. **1×1 Pointwise Convolution (Expand):** 4× channel expansion (96 → 384) for rich feature learning
+4. **GELU Activation:** Smooth, continuous gradients compared to ReLU
+5. **1×1 Pointwise Convolution (Project):** Compress back to original dimensions (384 → 96)
+6. **Drop Path + Residual Connection:** Regularization and gradient flow
 
-**Visual Summary:**
-```
-ResNet-50 (2015)           Modernization Steps              ConvNeXt (2022)
-──────────────            ─────────────────────            ───────────────
-    
-Input [224×224×3]                                          Input [224×224×3]
-    ↓                                                          ↓
-7×7 Conv, stride 2    ─→  1. Patchify Stem  ─→          4×4 Conv, stride 4
-3×3 MaxPool, stride 2                                        (no pooling)
-    ↓                                                          ↓
-[1×1, 64]             ─→  2. Inverted       ─→          [d7×7, 96]
-[3×3, 64]  ×3            Bottleneck +                     [1×1, 384]  ×3
-[1×1, 256]               Large Kernel                      [1×1, 96]
-    ↓                                                          ↓
-Batch Norm            ─→  3. Layer Norm     ─→          Layer Norm
-ReLU                      + GELU                           GELU
-    ↓                                                          ↓
-[Output]                                                   [Output]
+### ConvNeXt Family & Model Variants
 
-76.1% accuracy                                             82.0% accuracy
-```
+| Model | Parameters | Channel Dims (C) | Block Depths (B) | FLOPs | ImageNet-1K Acc |
+|-------|------------|------------------|------------------|-------|-----------------|
+| **ConvNeXt-Tiny** | 28.6M | (96, 192, 384, 768) | (3, 3, 9, 3) | 4.5G | 82.1% |
+| **ConvNeXt-Small** | 50.2M | (96, 192, 384, 768) | (3, 3, 27, 3) | 8.7G | 83.1% |
+| **ConvNeXt-Base** | 88.6M | (128, 256, 512, 1024) | (3, 3, 27, 3) | 15.4G | 83.8% |
 
-**Why Each Change Matters for ADNI:**
+*All models share the same architecture, differing only in width (channel dimensions) and depth (number of blocks) [[1]](#references).*
 
-1. **Patchify Stem:** Reduces computation by 4×, processes MRI slices faster
-2. **Depthwise 7×7:** Captures larger brain structures (hippocampus ≈ 30-40mm)
-3. **Inverted Bottleneck:** More parameters for learning complex AD patterns
-4. **LayerNorm:** Stable training on small batches (medical data often limited)
-5. **GELU:** Smoother gradients for subtle anatomical differences
-
-### ConvNeXt Block Design
-
-The fundamental building block of ConvNeXt differs significantly from traditional ResNet blocks by adopting an inverted bottleneck design inspired by transformers:
-
-**Visual Comparison:**
-
-![Block Architecture Comparison](images/block_comparison_detailed.png)
-*Figure: Detailed comparison of ResNet bottleneck (left) vs ConvNeXt inverted bottleneck (right). ResNet compresses first, ConvNeXt processes spatial information first.*
-
-```
-ResNet Block                    ConvNeXt Block
-(Bottleneck)                    (Inverted Bottleneck)
-────────────                    ──────────────────
-
-Input: 256-d                    Input: 96-d
-    ↓                              ↓
-┌─────────┐                    ┌──────────────┐
-│ 1×1, 64 │ ← compress         │ d7×7, 96     │ ← spatial mixing first!
-└─────────┘                    └──────────────┘
-    ↓                              ↓
-┌─────────┐                    ┌──────────────┐
-│ 3×3, 64 │                    │ LayerNorm    │ ← modern normalization
-└─────────┘                    └──────────────┘
-    ↓                              ↓
-┌─────────┐                    ┌──────────────┐
-│ 1×1,256 │ ← expand           │ 1×1, 384     │ ← expand 4× (like Transformer MLP)
-└─────────┘                    └──────────────┘
-    ↓                              ↓
-  ⊕ ← residual                 ┌──────────────┐
-    ↓                          │ GELU         │ ← smooth activation
-  ReLU                         └──────────────┘
-                                   ↓
-                               ┌──────────────┐
-                               │ 1×1, 96      │ ← project back
-                               └──────────────┘
-                                   ↓
-                                 ⊕ ← residual
-                                   ↓
-```
-
-**Key Differences:**
-1. **Depthwise 7×7 First:** ConvNeXt processes spatial information with large kernels before channel mixing
-2. **Inverted Bottleneck:** Expands internally (96 → 384 → 96) vs ResNet's compress-expand (256 → 64 → 256)
-3. **LayerNorm + GELU:** Modern normalization and activation for stable training
-4. **Larger Receptive Field:** 7×7 vs 3×3 captures more spatial context (critical for brain anatomy)
-
-### Understanding Depthwise Convolutions
-
-Depthwise convolutions are the secret sauce of ConvNeXt's efficiency:
-
-![Depthwise vs Standard Convolution](images/depthwise_vs_standard.png)
-*Figure: Standard convolution mixes all channels simultaneously (left), while depthwise convolution processes each channel independently then mixes with 1×1 pointwise (right). This reduces parameters by 83% while increasing receptive field by 2.3×.*
-
-**Standard Convolution:**
-- Mixes information across **all channels simultaneously**
-- For 96 channels: 3×3×96×96 = **82,944 parameters**
-
-**Depthwise + Pointwise:**
-- **Depthwise 7×7:** Each channel processed **independently** (spatial mixing)
-  - Parameters: 7×7×96 = **4,704**
-- **Pointwise 1×1:** Channels mixed **after** spatial processing (channel mixing)
-  - Parameters: 1×1×96×96 = **9,216**
-- **Total:** 13,920 parameters (83% reduction!)
-- **Receptive field:** 7×7 = 2.3× larger!
-
-**Why This Matters for Brain MRI:**
-```
-7×7 kernel at native resolution ≈ 28mm coverage
-├─ Can capture entire hippocampus in one operation
-├─ Detects ventricular enlargement patterns
-└─ Identifies cortical thinning across regions
-```
-
-### ConvNeXt Family
-
-**Model Variants Tested:**
-
-| Model | Parameters | Channel Dims (C) | Block Depths (B) | FLOPs |
-|-------|------------|------------------|------------------|-------|
-| ConvNeXt-Tiny | 28.6M | (96, 192, 384, 768) | (3, 3, 9, 3) | 4.5G |
-| ConvNeXt-Small | 50.2M | (96, 192, 384, 768) | (3, 3, 27, 3) | 8.7G |
-| ConvNeXt-Base | 88.6M | (128, 256, 512, 1024) | (3, 3, 27, 3) | 15.4G |
-
-*Note: All models use same architectural design, differing only in width and depth.*
-
-**Architecture Highlights:**
-- **Patchify Stem (4×4, stride 4):** Aggressive downsampling inspired by ViT
-- **Depthwise Convolutions (7×7):** Large receptive fields for spatial context
-- **Inverted Bottleneck:** 4× channel expansion for rich feature learning
-- **Layer Normalization:** Better training stability than BatchNorm
-- **GELU Activation:** Smooth, continuous gradients
-
-**Key Modifications for ADNI:**
+**Modifications for ADNI MRI:**
 ```python
 model = get_model(
     model_name='convnext_base',
-    in_chans=1,           # Grayscale MRI (modified from 3-channel RGB)
-    num_classes=2,        # Binary classification (AD vs NC)
+    in_chans=1,           # Grayscale MRI (vs 3-channel RGB)
+    num_classes=2,        # Binary: AD vs NC
     dropout=0.3,          # Regularization
-    pretrained=True       # ImageNet initialization
+    pretrained=True       # ImageNet weights
 )
 ```
 
-### Complete ConvNeXt-Small Architecture (Used in This Project)
-
-```
-Input: Grayscale MRI [1×256×256]
-    ↓
-┌────────────────────────────────────────┐
-│  Patchify Stem (4×4, stride 4)         │
-│  ├─ Conv2d(1→96, k=4, s=4)             │  [96×64×64]
-│  └─ LayerNorm(96)                      │
-└────────────────────────────────────────┘
-    ↓
-┌────────────────────────────────────────┐
-│  Stage 1: 3 ConvNeXt Blocks            │
-│  ├─ Block 1 (96 channels)              │
-│  ├─ Block 2 (96 channels)              │  [96×64×64]
-│  └─ Block 3 (96 channels)              │
-└────────────────────────────────────────┘
-    ↓ [Downsample: 2×2 conv, stride 2]
-┌────────────────────────────────────────┐
-│  Stage 2: 3 ConvNeXt Blocks            │
-│  ├─ Block 1 (192 channels)             │
-│  ├─ Block 2 (192 channels)             │  [192×32×32]
-│  └─ Block 3 (192 channels)             │
-└────────────────────────────────────────┘
-    ↓ [Downsample: 2×2 conv, stride 2]
-┌────────────────────────────────────────┐
-│  Stage 3: 27 ConvNeXt Blocks (DEEPEST) │
-│  ├─ Block 1-27 (384 channels)          │  [384×16×16]
-│  └─ ... (main feature extraction)      │
-└────────────────────────────────────────┘
-    ↓ [Downsample: 2×2 conv, stride 2]
-┌────────────────────────────────────────┐
-│  Stage 4: 3 ConvNeXt Blocks            │
-│  ├─ Block 1 (768 channels)             │
-│  ├─ Block 2 (768 channels)             │  [768×8×8]
-│  └─ Block 3 (768 channels)             │
-└────────────────────────────────────────┘
-    ↓ [Global Average Pooling]
-┌────────────────────────────────────────┐
-│  Classification Head                   │
-│  ├─ LayerNorm(768)                     │
-│  ├─ Dropout(p=0.3)                     │  [768]
-│  └─ Linear(768 → 2)                    │
-└────────────────────────────────────────┘
-    ↓
-Output: [2] logits → Softmax → [P(NC), P(AD)]
-```
-
-**Total Parameters:** 50.2M  
-**FLOPs:** 8.7G  
-**Depth:** 36 blocks (3+3+27+3)
-
 ### Why ConvNeXt for Alzheimer's Classification?
 
-**1. Large Receptive Fields for Anatomical Feature Detection**
+**1. Large Receptive Fields for Anatomical Features**
 
-Alzheimer's disease causes structural changes across multiple brain regions:
-- **Hippocampal atrophy** (memory formation center)
-- **Ventricular enlargement** (fluid-filled spaces expand)
-- **Cortical thinning** (outer brain layer deteriorates)
+Alzheimer's causes structural brain changes: hippocampal atrophy, ventricular enlargement, cortical thinning. ConvNeXt's 7×7 depthwise convolutions provide spatial coverage to detect these patterns:
+- **Stage 1 (56×56):** Local textures, edges
+- **Stage 2 (28×28):** Regional structures  
+- **Stage 3 (14×14):** Hippocampus, ventricles (main feature extraction with 27 blocks)
+- **Stage 4 (7×7):** Whole-brain integration
 
-ConvNeXt's 7×7 depthwise convolutions provide spatial coverage to detect these patterns:
+**2. Efficiency on Limited Medical Data**
 
-![Receptive Field Visualization](images/receptive_field_stages.png)
-*Figure: Receptive field growth across ConvNeXt stages. Red boxes show the effective spatial coverage at each stage. By Stage 4, the network can integrate information from the entire brain (224mm coverage) to detect global atrophy patterns.*
+| Aspect | Vision Transformer | ConvNeXt ✓ |
+|--------|-------------------|------------|
+| **Data Requirement** | >1M images | <30k images |
+| **Training Stability** | Sensitive | Robust |
+| **Inference Speed** | Quadratic (attention) | Linear (convolution) |
 
-```
-Effective Receptive Field Growth:
-├─ Stage 1 (64×64): 7×7 kernel ≈ 28mm coverage → local texture
-├─ Stage 2 (32×32): ~49mm coverage → regional structures
-├─ Stage 3 (16×16): ~112mm coverage → hippocampus, ventricles
-└─ Stage 4 (8×8): ~224mm coverage → whole-brain integration
-```
+**3. Transfer Learning from ImageNet**
 
-**2. Hierarchical Feature Learning**
-
-![Feature Hierarchy](images/feature_hierarchy.png)
-*Figure: Hierarchical feature extraction across stages. Early layers detect low-level patterns (edges, textures), while later layers integrate high-level anatomical structures (hippocampus shape, ventricular size, global atrophy).*
-
-```
-Early Layers (Stage 1-2):     Later Layers (Stage 3-4):
-├─ Edge detection             ├─ Hippocampus shape
-├─ Texture patterns           ├─ Ventricle size
-├─ Gray/white matter          ├─ Cortical thickness
-└─ Local contrast             └─ Global brain atrophy
-```
-
-**3. Computational Efficiency on Limited Medical Data**
-
-| Aspect | Vision Transformer (ViT) | ConvNeXt |
-|--------|--------------------------|----------|
-| **Data Efficiency** | Requires large datasets (>1M images) | Works well with <30k images ✓ |
-| **Inductive Bias** | None (learns from scratch) | Convolution locality ✓ |
-| **Training Stability** | Sensitive to hyperparameters | Robust training ✓ |
-| **Inference Speed** | Slower (attention quadratic) | Faster (convolution linear) ✓ |
-
-**4. Transfer Learning from ImageNet**
-
-Despite being trained on natural images (RGB), pretrained ConvNeXt weights transfer effectively:
+Pretrained weights transfer effectively despite domain shift (natural images → medical):
 - Low-level features (edges, textures) are universal
-- Middle layers adapt to brain anatomy through fine-tuning
-- High-level patterns learn AD-specific biomarkers
+- Middle layers fine-tune to brain anatomy
+- High layers learn AD-specific biomarkers
 
-**5. Proven Medical Imaging Performance**
+**4. Computational Advantages**
 
-ConvNeXt has shown success in:
-- Chest X-ray classification (COVID-19 detection)
-- Diabetic retinopathy grading
-- Skin lesion classification
-- Brain tumor segmentation
-
-**Comparison with Other Architectures:**
-
-| Architecture | Strengths for AD Classification | Weaknesses |
-|--------------|--------------------------------|------------|
-| **ResNet** | Fast, efficient, proven | Smaller receptive fields (3×3) |
-| **Vision Transformer** | Global attention | Needs huge datasets, slow |
-| **EfficientNet** | Best parameter efficiency | Complex scaling, harder to tune |
-| **ConvNeXt** ✓ | **Large receptive fields, efficient, stable** | **Slightly more parameters than ResNet** |
+- **83% fewer parameters** than standard convolutions (depthwise separable design)
+- **2.3× larger receptive field** (7×7 vs 3×3)
+- **Hardware optimized:** CNNs leverage GPU acceleration better than Transformers
 
 ---
 
@@ -837,21 +630,25 @@ While this is a research project, the techniques demonstrated here show promise 
 
 ## References
 
-1. Liu, Z., Mao, H., Wu, C. Y., Feichtenhofer, C., Darrell, T., & Xie, S. (2022). *A ConvNet for the 2020s*. Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR), 11976-11986.
+1. Liu, Z., Mao, H., Wu, C. Y., Feichtenhofer, C., Darrell, T., & Xie, S. (2022). *A ConvNet for the 2020s*. Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR), 11976-11986. [https://arxiv.org/abs/2201.03545](https://arxiv.org/abs/2201.03545)
 
-2. ADNI Dataset: Alzheimer's Disease Neuroimaging Initiative. [https://adni.loni.usc.edu/](https://adni.loni.usc.edu/)
+2. GeeksforGeeks (2025). *ConvNeXt - Convolutional Neural Network Architecture*. Computer Vision Tutorial. [https://www.geeksforgeeks.org/convnext/](https://www.geeksforgeeks.org/convnext/)
 
-3. Lin, T. Y., Goyal, P., Girshick, R., He, K., & Dollár, P. (2017). *Focal loss for dense object detection*. Proceedings of the IEEE International Conference on Computer Vision, 2980-2988.
+3. Saifullah, Agne, S., Dengel, A., & Ahmed, S. (2023). *DocXClassifier: Towards a Robust and Interpretable Deep Neural Network for Document Image Classification*. arXiv preprint arXiv:2310.02088. [https://arxiv.org/abs/2310.02088](https://arxiv.org/abs/2310.02088)
 
-4. Smith, L. N. (2018). *A disciplined approach to neural network hyper-parameters: Part 1--learning rate, batch size, momentum, and weight decay*. arXiv preprint arXiv:1803.09820.
+4. ADNI Dataset: Alzheimer's Disease Neuroimaging Initiative. [https://adni.loni.usc.edu/](https://adni.loni.usc.edu/)
 
-5. He, K., Zhang, X., Ren, S., & Sun, J. (2016). *Deep residual learning for image recognition*. Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition, 770-778.
+5. Lin, T. Y., Goyal, P., Girshick, R., He, K., & Dollár, P. (2017). *Focal loss for dense object detection*. Proceedings of the IEEE International Conference on Computer Vision, 2980-2988.
 
-6. UQ Research Computing Centre - Rangpur HPC Documentation. [https://rcc.uq.edu.au/](https://rcc.uq.edu.au/)
+6. Smith, L. N. (2018). *A disciplined approach to neural network hyper-parameters: Part 1--learning rate, batch size, momentum, and weight decay*. arXiv preprint arXiv:1803.09820.
 
-7. PyTorch Documentation. [https://pytorch.org/docs/](https://pytorch.org/docs/)
+7. He, K., Zhang, X., Ren, S., & Sun, J. (2016). *Deep residual learning for image recognition*. Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition, 770-778.
 
-8. Shorten, C., & Khoshgoftaar, T. M. (2019). *A survey on image data augmentation for deep learning*. Journal of Big Data, 6(1), 60.
+8. UQ Research Computing Centre - Rangpur HPC Documentation. [https://rcc.uq.edu.au/](https://rcc.uq.edu.au/)
+
+9. PyTorch Documentation. [https://pytorch.org/docs/](https://pytorch.org/docs/)
+
+10. Shorten, C., & Khoshgoftaar, T. M. (2019). *A survey on image data augmentation for deep learning*. Journal of Big Data, 6(1), 60.
 
 ---
 

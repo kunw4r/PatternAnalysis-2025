@@ -43,6 +43,48 @@ class DropPath(nn.Module):
         
         return x / keep_prob * random_tensor
 
+class FocalLoss(nn.Module):
+    """
+    Focal Loss for handling class imbalance.
+    Focuses training on hard examples by down-weighting easy ones.
+    
+    Formula: FL = -α(1-pt)^γ * log(pt)
+    
+    Args:
+        alpha: Weighting factor for class imbalance (0.25 is common)
+        gamma: Focusing parameter (2.0 is common)
+        num_classes: Number of classes
+    """
+    def __init__(self, alpha=0.25, gamma=2.0, num_classes=2):
+        super().__init__()
+        self.alpha = alpha
+        self.gamma = gamma
+        self.num_classes = num_classes
+    
+    def forward(self, pred, target):
+        """
+        Args:
+            pred: Model predictions (logits) [batch_size, num_classes]
+            target: Ground truth labels [batch_size]
+        """
+        # Convert to probabilities
+        probs = F.softmax(pred, dim=1)
+        
+        # Get probability of correct class
+        target_one_hot = F.one_hot(target, num_classes=self.num_classes)
+        pt = (probs * target_one_hot).sum(dim=1)
+        
+        # Calculate focal weight
+        focal_weight = (1 - pt) ** self.gamma
+        
+        # Calculate cross entropy
+        ce_loss = F.cross_entropy(pred, target, reduction='none')
+        
+        # Apply focal weight and alpha
+        focal_loss = self.alpha * focal_weight * ce_loss
+        
+        return focal_loss.mean()
+
 
 class LayerNorm2d(nn.Module):
     """
@@ -549,23 +591,17 @@ def get_model(model_name='convnext_small', in_chans=1, num_classes=2,
         raise ValueError(f"Unknown model: {model_name}")
 
 
-def get_loss_function(loss_type='label_smoothing', smoothing=0.1):
-    """
-    Get loss function for training.
-    
-    Args:
-        loss_type: 'cross_entropy' or 'label_smoothing'
-        smoothing: Smoothing parameter (if using label smoothing)
-    
-    Returns:
-        Loss function
-    """
+def get_loss_function(loss_type='label_smoothing', smoothing=0.1, focal_alpha=0.25, focal_gamma=2.0):
+    """Get loss function for training"""
     if loss_type == 'cross_entropy':
         print(f"Using CrossEntropyLoss")
         return nn.CrossEntropyLoss()
     elif loss_type == 'label_smoothing':
         print(f"Using Label Smoothing Loss (smoothing={smoothing})")
         return LabelSmoothingLoss(smoothing=smoothing, num_classes=2)
+    elif loss_type == 'focal':
+        print(f"Using Focal Loss (alpha={focal_alpha}, gamma={focal_gamma})")
+        return FocalLoss(alpha=focal_alpha, gamma=focal_gamma, num_classes=2)
     else:
         raise ValueError(f"Unknown loss type: {loss_type}")
 

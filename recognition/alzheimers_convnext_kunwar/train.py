@@ -19,6 +19,8 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.optim.lr_scheduler import OneCycleLR, CosineAnnealingLR
+import matplotlib
+matplotlib.use('Agg')  # Headless backend for HPC
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 import json
@@ -761,11 +763,8 @@ def train(
 
 
 if __name__ == '__main__':
-    # ===================================================================
-    # EXPERIMENT EXAMPLES - Uncomment the one you want to run
-    # ===================================================================
     
-    # OPTION 1: From Scratch with OneCycleLR (Auto-generated name)
+    # OPTION 1: From Scratch with OneCycleLR 
     model, history = train(
         data_dir='/home/groups/comp3710/ADNI/AD_NC',
         model_name='convnext_small',
@@ -781,12 +780,10 @@ if __name__ == '__main__':
         use_wandb=True,
         wandb_project='alzheimers-convnext',
         wandb_entity='limpyrawnuk-the-university-of-queensland',
-        # wandb_run_name left as None for auto-generation
-        # Will create: small_scratch_1cycle_j{jobid}_0127_1430
         save_dir='./checkpoints'
     )
     
-    # OPTION 2: From Scratch with CosineAnnealingLR (Auto-generated name)
+    # OPTION 2: From Scratch with CosineAnnealingLR 
     # model, history = train(
     #     data_dir='/home/groups/comp3710/ADNI/AD_NC',
     #     model_name='convnext_small',
@@ -804,6 +801,5 @@ if __name__ == '__main__':
     #     use_wandb=True,
     #     wandb_project='alzheimers-convnext',
     #     wandb_entity='limpyrawnuk-the-university-of-queensland',
-    #     # Will create: small_scratch_cosine_j{jobid}_0127_1430
     #     save_dir='./checkpoints'
     # )

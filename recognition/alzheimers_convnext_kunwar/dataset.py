@@ -159,10 +159,10 @@ def get_dataloaders(data_dir, batch_size=32, num_workers=4, img_size=224, val_sp
     print(f"  Val:   {val_size} ({val_split*100:.0f}%)")
     
     # Split indices randomly but reproducibly
-    indices = list(range(total_train))
     torch.manual_seed(42)  # Reproducible split
-    train_indices = torch.randperm(total_train)[:train_size].tolist()
-    val_indices = torch.randperm(total_train)[train_size:].tolist()
+    indices = torch.randperm(total_train).tolist()
+    train_indices = indices[:train_size]
+    val_indices = indices[train_size:]
     
     # Create train and val samples
     train_samples_split = [train_samples[i] for i in train_indices]

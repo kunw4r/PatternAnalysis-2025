@@ -24,7 +24,6 @@ matplotlib.use('Agg')  # Headless backend for HPC
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 import json
-import wandb
 
 
 from dataset import get_dataloaders
@@ -117,15 +116,6 @@ def train_one_epoch(model, train_loader, criterion, optimiser, scheduler, device
             'acc': f'{100.*correct/total:.2f}%',
             'lr': f'{current_lr:.2e}'
         })
-        
-        # Log to wandb every 10 batches
-        if batch_idx % 10 == 0:
-            wandb.log({
-                'train/batch_loss': loss.item(),
-                'train/batch_acc': 100. * correct / total,
-                'train/learning_rate': current_lr,
-                'train/step': epoch * len(train_loader) + batch_idx
-            })
     
     epoch_loss = running_loss / len(train_loader)
     epoch_acc = 100. * correct / total
@@ -341,7 +331,8 @@ def train(
     
     # Other
     save_dir='./checkpoints',
-    patience=10
+    patience=10,
+    experiment_name=None,  # Experiment name for unique file naming
 ):
     """
     Main training function with wandb integration and flexible LR scheduling
@@ -407,6 +398,7 @@ def train(
         # Create config dictionary for wandb
         config = {
             'job_id': job_id,
+            'experiment_name': experiment_name,
             'model_name': model_name,
             'batch_size': batch_size,
             'num_epochs': num_epochs,
@@ -447,18 +439,6 @@ def train(
         ]
         if use_mixup:
             tags.append('mixup')
-        
-        # Initialise wandb run
-        wandb.init(
-            project=wandb_project,
-            entity=wandb_entity,
-            name=wandb_run_name,
-            config=config,
-            tags=tags,
-        )
-        
-        print(f"\n✓ Wandb initialised: {wandb.run.name}")
-        print(f"✓ View run at: {wandb.run.url}\n")
     
     # Get device
     device = get_device()
@@ -503,14 +483,6 @@ def train(
         print(f"Pretrained: Yes (stages={pretrain_stages})")
     else:
         print(f"Pretrained: No (training from scratch)")
-    
-    # Log model info to wandb
-    if use_wandb:
-        wandb.config.update({
-            'total_params': total_params,
-            'trainable_params': trainable_params,
-        })
-        wandb.watch(model, log='all', log_freq=100)
     
     # Loss function
     print("\n" + "="*80)
@@ -571,6 +543,7 @@ def train(
     # Save local configuration
     config_dict = {
         'job_id': job_id,
+        'experiment_name': experiment_name,
         'model_name': model_name,
         'batch_size': batch_size,
         'num_epochs': num_epochs,
@@ -588,7 +561,12 @@ def train(
         'trainable_params': trainable_params,
     }
     
-    config_path = os.path.join(save_dir, f'config_job{job_id}.json')
+    # Use experiment name for config filename if provided
+    if experiment_name:
+        config_path = os.path.join(save_dir, f'config_{experiment_name}.json')
+    else:
+        config_path = os.path.join(save_dir, f'config_job{job_id}.json')
+    
     with open(config_path, 'w') as f:
         json.dump(config_dict, f, indent=2)
     print(f"\n✓ Config saved to {config_path}")
@@ -631,19 +609,6 @@ def train(
         # Get current learning rate
         current_lr = optimiser.param_groups[0]['lr']
         
-        # Log to wandb
-        if use_wandb:
-            wandb.log({
-                'epoch': epoch + 1,
-                'train/loss': train_loss,
-                'train/accuracy': train_acc,
-                'val/loss': val_loss,
-                'val/accuracy': val_acc,
-                'val/nc_accuracy': per_class_acc['NC'],
-                'val/ad_accuracy': per_class_acc['AD'],
-                'learning_rate': current_lr,
-            })
-        
         # Print epoch summary
         print(f"\n{'='*80}")
         print(f"Epoch {epoch+1}/{num_epochs} Summary")
@@ -659,9 +624,15 @@ def train(
             best_epoch = epoch + 1
             patience_counter = 0
             
-            checkpoint_path = os.path.join(save_dir, f'best_model_job{job_id}.pth')
+            # Use experiment name for checkpoint filename if provided
+            if experiment_name:
+                checkpoint_path = os.path.join(save_dir, f'best_model_{experiment_name}.pth')
+            else:
+                checkpoint_path = os.path.join(save_dir, f'best_model_job{job_id}.pth')
+            
             torch.save({
                 'job_id': job_id,
+                'experiment_name': experiment_name,
                 'epoch': epoch + 1,
                 'model_state_dict': model.state_dict(),
                 'optimiser_state_dict': optimiser.state_dict(),
@@ -670,20 +641,6 @@ def train(
                 'config': config_dict,
             }, checkpoint_path)
             print(f"✓ New best model saved! Val Acc: {val_acc:.2f}%\n")
-            
-            # Save best model to wandb
-            if use_wandb:
-                wandb.run.summary["best_val_acc"] = best_val_acc
-                wandb.run.summary["best_epoch"] = best_epoch
-                
-                # Save model as wandb artifact
-                artifact = wandb.Artifact(
-                    name=f'model-job{job_id}',
-                    type='model',
-                    description=f'Best model with {best_val_acc:.2f}% validation accuracy'
-                )
-                artifact.add_file(checkpoint_path)
-                wandb.log_artifact(artifact)
         else:
             patience_counter += 1
             print(f"No improvement ({patience_counter}/{patience} patience)\n")
@@ -704,30 +661,14 @@ def train(
     print(f"Total time: {total_time/60:.2f} minutes ({total_time/3600:.2f} hours)")
     print(f"Best validation accuracy: {best_val_acc:.2f}% (Epoch {best_epoch})")
     
-    if best_val_acc >= 80.0:
-        print("\n🎉 SUCCESS: Reached target accuracy of 80%!")
-    else:
-        print(f"\n⚠ Best accuracy ({best_val_acc:.2f}%) is below target (80%)")
-        print("Consider:")
-        print("  - Training for more epochs")
-        print("  - Using pretrained weights (pretrained=True)")
-        print("  - Enabling MixUp (use_mixup=True)")
-        print("  - Adjusting learning rate or dropout")
-        print(f"  - Trying different scheduler (current: {scheduler_type})")
-    
     # Plot training curves
-    curves_path = os.path.join(save_dir, f'training_curves_job{job_id}.png')
-    fig = plot_training_curves(train_losses, train_accs, val_losses, val_accs, save_path=curves_path)
+    # Use experiment name for curves filename if provided
+    if experiment_name:
+        curves_path = os.path.join(save_dir, f'training_curves_{experiment_name}.png')
+    else:
+        curves_path = os.path.join(save_dir, f'training_curves_job{job_id}.png')
     
-    # Log training curves to wandb
-    if use_wandb:
-        wandb.log({"training_curves": wandb.Image(fig)})
-        
-        # Log final metrics
-        wandb.run.summary["final_train_acc"] = train_accs[-1]
-        wandb.run.summary["final_val_acc"] = val_accs[-1]
-        wandb.run.summary["total_time_minutes"] = total_time / 60
-        wandb.run.summary["total_epochs_trained"] = epoch + 1
+    fig = plot_training_curves(train_losses, train_accs, val_losses, val_accs, save_path=curves_path)
     
     # Update config with final results
     config_dict['best_val_acc'] = best_val_acc
@@ -743,14 +684,7 @@ def train(
     print(f"✓ Config: config_job{job_id}.json")
     print(f"✓ Curves: training_curves_job{job_id}.png")
     
-    if use_wandb:
-        print(f"✓ View results at: {wandb.run.url}")
-    
     print("="*80 + "\n")
-    
-    # Finish wandb run
-    if use_wandb:
-        wandb.finish()
     
     return model, {
         'train_losses': train_losses,
@@ -760,7 +694,6 @@ def train(
         'best_val_acc': best_val_acc,
         'best_epoch': best_epoch
     }
-
 
 if __name__ == '__main__':
     

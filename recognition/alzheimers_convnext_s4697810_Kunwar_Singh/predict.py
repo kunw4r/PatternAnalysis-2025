@@ -530,6 +530,10 @@ def main():
     parser.add_argument('--checkpoint', type=str, required=True,
                         help='Path to model checkpoint (.pth file)')
     
+    # Optional experiment name for consistent file naming
+    parser.add_argument('--experiment_name', type=str, default=None,
+                        help='Experiment name for output files (defaults to job ID from checkpoint)')
+    
     # Data arguments
     parser.add_argument('--data_dir', type=str, 
                         default='/home/groups/comp3710/ADNI/AD_NC',
@@ -561,10 +565,15 @@ def main():
     # Load checkpoint
     model, config, checkpoint_info = load_checkpoint(args.checkpoint, device)
     
-    # Extract experiment name or job_id for output filenames
-    experiment_name = checkpoint_info.get('experiment_name', None)
-    job_id = checkpoint_info.get('job_id', 'unknown')
-    output_prefix = experiment_name if experiment_name else f'job{job_id}'
+    # Extract experiment name for output filenames
+    # Priority: command-line arg > checkpoint metadata > job_id fallback
+    if args.experiment_name:
+        experiment_name = args.experiment_name
+        output_prefix = experiment_name
+    else:
+        experiment_name = checkpoint_info.get('experiment_name', None)
+        job_id = checkpoint_info.get('job_id', 'unknown')
+        output_prefix = experiment_name if experiment_name else f'job{job_id}'
     
     # Load test data
     print("\n" + "="*80)
@@ -660,6 +669,11 @@ def main():
             digits=4
         ))
     
+    # Ensure checkpoint_info contains the experiment name used for filenames
+    # Priority: use the command-line experiment name if provided, otherwise keep existing metadata
+    if experiment_name:
+        checkpoint_info['experiment_name'] = experiment_name
+
     # Save results
     if args.save_predictions:
         save_results(all_results, checkpoint_info, args.save_dir)

@@ -83,7 +83,7 @@ ConvNeXt combines the best of both worlds: the efficiency and scalability of CNN
 
 | Normal Control (NC) | Alzheimer's Disease (AD) |
 |---------------------|--------------------------|
-| ![NC Example](results/sample_nc.png) | ![AD Example](results/sample_ad.png) |
+| ![NC Example](images/sample_nc.jpeg) | ![AD Example](images/sample_ad.jpeg) |
 | Healthy brain structure with preserved cortical thickness | Visible atrophy and enlarged ventricles |
 
 ### Train/Val/Test Split Strategy
@@ -345,35 +345,59 @@ class FocalLoss(nn.Module):
 
 ### Training Curves
 
-**Example: Experiment 4 (Best Model)**
+**Experiment 4 (Best Model): base_pretrained**
 
-![Training Curves](checkpoints/training_curves_4_base_pretrained.png)
+![Training Curves](images/training_curves_4_base_pretrained.png)
 
-**Observations:**
-- Smooth convergence without oscillations
-- Validation loss tracks training loss → good generalization
-- Early stopping at epoch 25 prevented overfitting
+**Training Progression:**
+
+The training curves reveal several important insights about the model's learning dynamics:
+
+1. **Early Phase (Epochs 1-10): Rapid Learning**
+   - Training accuracy jumps from ~50% to ~70% in first 10 epochs
+   - Validation accuracy highly volatile (50-75%), showing the model is exploring the feature space
+   - Both losses decrease steeply, indicating effective gradient-based learning
+
+2. **Stabilization Phase (Epochs 11-20): Feature Refinement**
+   - Training accuracy continues climbing smoothly from 70% to 80%
+   - Validation accuracy stabilizes around 70-78%, with less volatility
+   - The gap between train and validation narrows, suggesting good generalization
+
+3. **Convergence Phase (Epochs 21-30): Final Optimization**
+   - **Training accuracy reaches 80-81% plateau**
+   - **Validation accuracy converges to ~81%** at epoch 30
+   - **Critical observation: Model saved best checkpoint at epoch 30 (final epoch)**
+   - Validation accuracy was **still improving** at the end → model could benefit from extended training
+
+4. **Loss Dynamics:**
+   - Training loss decreases smoothly from ~0.048 to ~0.027
+   - Validation loss tracks training loss closely (parallel curves)
+   - **No signs of overfitting**: Validation loss continues decreasing, doesn't diverge from training loss
+   - Final val loss (0.0267) is very close to train loss (0.027) → excellent generalization
+
+**Key Insight:**
+The fact that the best model was saved on the **final epoch (30/30)** with validation accuracy **still climbing** strongly suggests that increasing training to 40-50 epochs could push performance beyond the 80% target. This motivated the extended training experiments (9-13) with longer epochs and adjusted hyperparameters.
 
 ### Validation Performance
 
-**Summary Table:**
+**Summary Table (All 8 Experiments):**
 
-| Rank | Experiment | Val Acc (%) | Test Acc (%) | F1 Score |
-|------|------------|-------------|--------------|----------|
-| 1 | 4_base_pretrained | **82.45** | **82.13** | **0.821** |
-| 2 | 5_base_focal_aggressive | 81.67 | 81.05 | 0.809 |
-| 3 | 8_base_crossentropy | 80.89 | 80.56 | 0.804 |
-| 4 | 3_base_onecycle | 80.34 | 80.21 | 0.801 |
-| 5 | 6_base_cosine_highLR | 79.92 | 79.88 | 0.797 |
-| 6 | 2_small_onecycle | 79.45 | 79.12 | 0.790 |
-| 7 | 1_tiny_onecycle | 78.56 | 78.45 | 0.783 |
-| 8 | 7_small_mixup | 78.12 | 77.92 | 0.778 |
+| Rank | Experiment | Val Acc (%) | Patient Test Acc (%) | Slice Test Acc (%) | Test F1 (NC) | Test F1 (AD) |
+|------|------------|-------------|----------------------|--------------------|--------------|--------------|
+| 1 | **4_base_pretrained** | **81.04** | **78.44** | **73.84** | **0.802** | **0.764** |
+| 2 | 2_small_onecycle | 85.67 | 78.00 | 74.00 | 0.810 | 0.739 |
+| 3 | 3_base_onecycle | 86.71 | 78.00 | 74.41 | 0.808 | 0.743 |
+| 4 | 1_tiny_onecycle | 83.33 | 77.78 | 73.46 | 0.804 | 0.744 |
+| 5 | 6_base_cosine_highLR | 85.16 | 76.89 | 73.66 | 0.800 | 0.726 |
+| 6 | 8_base_crossentropy | 73.40 | 71.33 | 68.01 | 0.748 | 0.668 |
+| 7 | 7_small_mixup | 57.55 | 56.44 | 56.11 | 0.310 | 0.682 |
+| 8 | 5_base_focal_aggressive | 50.49 | 49.56 | 50.09 | 0.000 | 0.663 |
 
-**⚠️ Important Note on Metrics:**
-- **Validation Accuracy:** Computed at **slice-level** during training (individual MRI slices)
-- **Test Accuracy:** Computed at **patient-level** using majority voting across all slices per patient
-- The `predict.py` script reports **both** slice-level and patient-level test accuracy for comprehensive evaluation
-- Patient-level is the clinically meaningful metric (diagnosing patients, not individual images)
+**⚠️ Important Notes:**
+- **Validation Accuracy:** Computed at **slice-level** during training
+- **Test Accuracy:** Reported at **both slice-level and patient-level** (majority voting)
+- **Patient-level is the clinically meaningful metric** (diagnosing patients, not individual slices)
+- Despite experiment 3 having higher validation accuracy (86.71%), experiment 4 achieved the best patient-level test accuracy (78.44%) due to better pretrained features and focal loss handling of class imbalance
 
 ### Test Set Evaluation
 
@@ -381,39 +405,71 @@ class FocalLoss(nn.Module):
 
 **Slice-Level Metrics:**
 ```
-Overall Accuracy: 82.13% (7,391/9,000)
+Overall Accuracy: 73.84% (6,646/9,000)
 
 Per-Class Accuracy:
-  NC (Class 0): 83.24% (3,779/4,540)
-  AD (Class 1): 80.99% (3,612/4,460)
+  NC (Class 0): 80.64% (3,657/4,540)
+  AD (Class 1): 66.93% (2,985/4,460)
 
 Precision / Recall / F1:
-  NC: 0.834 / 0.832 / 0.833
-  AD: 0.809 / 0.810 / 0.809
+  NC: 0.713 / 0.806 / 0.757
+  AD: 0.773 / 0.669 / 0.717
 ```
 
-**Patient-Level Metrics** (Majority Voting):
+**Patient-Level Metrics** (Majority Voting - **Clinical Standard**):
 ```
-Overall Accuracy: 84.67%
-NC Accuracy: 86.12%
-AD Accuracy: 83.21%
+Overall Accuracy: 78.44% (353/450 patients)
+
+Per-Class Accuracy:
+  NC: 86.34% (196/227 patients)
+  AD: 70.40% (157/223 patients)
+
+Precision / Recall / F1:
+  NC: 0.748 / 0.863 / 0.802
+  AD: 0.835 / 0.704 / 0.764
 ```
+
+**Key Observations:**
+- **Patient-level accuracy (78.44%) is 4.6% higher than slice-level (73.84%)**
+- Majority voting effectively filters out noisy individual slice predictions
+- Model is better at identifying NC patients (86.34%) than AD patients (70.40%)
+- High AD precision (83.5%) means when model predicts AD, it's usually correct
+- Lower AD recall (70.4%) means model misses ~30% of AD cases → room for improvement
 
 ### Confusion Matrix
 
-**Slice-Level:**
+**Slice-Level Confusion Matrix:**
 
-![Confusion Matrix](results/confusion_matrix_slice_4_base_pretrained.png)
+![Confusion Matrix - Slice Level](images/confusion_matrix_slice.png)
 
 **Interpretation:**
-- **True Positives (AD):** 3,612 correctly identified Alzheimer's cases
-- **True Negatives (NC):** 3,779 correctly identified healthy controls
-- **False Positives:** 761 NC misclassified as AD (16.76%)
-- **False Negatives:** 848 AD misclassified as NC (19.01%)
+- **True Negatives (NC):** 3,657 slices correctly identified as healthy
+- **True Positives (AD):** 2,985 slices correctly identified as Alzheimer's
+- **False Positives:** 883 NC slices misclassified as AD (19.4%)
+- **False Negatives:** 1,475 AD slices misclassified as NC (33.1%)
+
+**Pattern Analysis:**
+- Model has higher false negative rate (33.1%) than false positive rate (19.4%)
+- This means model is more conservative → tends to miss AD cases rather than falsely alarm
+- From a clinical screening perspective, this is suboptimal (missing actual disease)
+
+---
+
+**Patient-Level Confusion Matrix** (Majority Voting):
+
+![Confusion Matrix - Patient Level](images/confusion_matrix_patient.png)
+
+**Interpretation:**
+- **True Negatives (NC):** 196/227 patients correctly identified (86.3%)
+- **True Positives (AD):** 157/223 patients correctly identified (70.4%)
+- **False Positives:** 31 NC patients misclassified as AD (13.7%)
+- **False Negatives:** 66 AD patients misclassified as NC (29.6%)
 
 **Clinical Relevance:**
-- Higher false negatives (19%) → model occasionally misses AD cases
-- Could be improved with ensemble methods or additional AD-specific features
+- Patient-level prediction is more balanced than slice-level
+- **29.6% false negative rate** means ~30% of AD patients would be missed in screening
+- **13.7% false positive rate** means ~14% of healthy patients would get unnecessary follow-up
+- For clinical deployment, sensitivity (AD recall) needs improvement → target 85%+ to reduce missed diagnoses
 
 ---
 
@@ -421,59 +477,130 @@ AD Accuracy: 83.21%
 
 ### Best Performing Model
 
-**Experiment 4: 4_base_pretrained achieved 82.13% test accuracy**
+**Experiment 4: base_pretrained achieved 78.44% patient-level test accuracy (best overall)**
 
 **Why it succeeded:**
-1. **Transfer Learning:** ImageNet pretrained weights provided strong feature extractors
-2. **Focal Loss:** Addressed class imbalance more effectively than cross-entropy
-3. **Optimal Dropout:** 0.3 dropout balanced regularization with feature retention
-4. **Sufficient Training:** 30 epochs allowed full fine-tuning without overfitting
+
+1. **Transfer Learning from ImageNet:**
+   - Pretrained weights provided robust low-level feature extractors (edges, textures, shapes)
+   - Fine-tuning adapted these features to medical imaging domain
+   - Comparison: Pretrained (78.44%) vs From-Scratch Base (78.00%) → +0.44% improvement
+   - While modest, pretraining provided more stable convergence and better generalization
+
+2. **Focal Loss for Class Balance:**
+   - Focal loss down-weights easy examples, focuses on hard misclassifications
+   - Particularly effective for medical imaging where subtle AD features are harder to learn
+   - Better than label smoothing for this dataset (experiment 3: 78.00% vs 78.44%)
+
+3. **Optimal Regularization:**
+   - Dropout 0.3 (lower than from-scratch experiments using 0.5)
+   - Lower dropout preserves pretrained features while preventing overfitting
+   - Weight decay 0.01 provides additional L2 regularization
+
+4. **Extended Training Duration:**
+   - 30 epochs allowed full fine-tuning of all layers
+   - Critically: **model saved best checkpoint on final epoch (30/30)**
+   - Validation accuracy was **still improving**, suggesting 40-50 epochs could yield 80%+
+   - This insight motivated the extended training experiments (9-13) detailed in `EXTENDED_EXPERIMENTS_README.md`
 
 ### Key Findings
 
-1. **Pretraining Matters:**
-   - Pretrained Base (82.13%) > From-scratch Base (80.21%)
-   - +1.92% improvement from ImageNet initialization
+**1. Transfer Learning Impact:**
+- **Experiment 4 (pretrained, 78.44%)** vs **Experiment 3 (from scratch, 78.00%)**
+- Pretrained models converged faster and showed more stable training curves
+- ImageNet features transfer surprisingly well despite domain gap (natural images → medical scans)
 
-2. **Model Size vs Performance:**
-   - Tiny (78.45%) < Small (79.12%) < Base (80.21%)
-   - Larger models capture more complex patterns
+**2. Model Size Analysis:**
+| Model Size | Parameters | Patient Test Acc | Training Time |
+|------------|------------|------------------|---------------|
+| Tiny | 28M | 77.78% | ~39 min |
+| Small | 50M | 78.00% | ~57 min |
+| **Base** | **89M** | **78.44%** | **~82 min** |
 
-3. **Loss Function Impact:**
-   - Focal Loss (82.13%) > Label Smoothing (80.21%) > Cross-Entropy (80.56%)
-   - Focal loss handles class imbalance better
+- Larger models capture more complex anatomical patterns
+- Diminishing returns: Small→Base only +0.44%, but 44% more training time
+- For production, Small model might offer best speed/accuracy trade-off
 
-4. **Scheduler Comparison:**
-   - OneCycle generally outperformed Cosine Annealing
-   - Cosine with high LR converged faster but slightly lower accuracy
+**3. Loss Function Comparison:**
+| Loss Type | Best Experiment | Patient Test Acc |
+|-----------|-----------------|------------------|
+| **Focal Loss** | **4_base_pretrained** | **78.44%** |
+| Label Smoothing | 3_base_onecycle | 78.00% |
+| Cross-Entropy | 8_base_crossentropy | 71.33% |
 
-5. **Data Augmentation:**
-   - MixUp surprisingly decreased performance (77.92%)
-   - Possibly too aggressive for medical imaging
+- Focal loss handles class imbalance and hard examples best
+- Pure cross-entropy severely underperformed (71.33%)
+- Label smoothing competitive but slightly behind focal loss
+
+**4. Learning Rate Scheduler Impact:**
+- **OneCycleLR:** Used by top 4 experiments (77.78%-78.44%)
+  - Fast warm-up, peak LR at 30% of training, smooth annealing
+  - Excellent for fine-tuning pretrained models
+- **CosineAnnealing:** Experiment 6 (76.89%)
+  - Slower convergence, requires careful tuning
+  - High LR (5e-4) may have been too aggressive
+
+**5. Data Augmentation Failure:**
+- **Experiment 7 (MixUp): 56.44%** - severe underperformance
+- **Experiment 8 (No MixUp): 71.33%** - recovered performance
+- **Hypothesis:** MixUp blending destroys critical AD biomarkers
+  - Hippocampal atrophy and ventricular enlargement are spatially localized
+  - Blending slices from different patients creates unrealistic brain anatomy
+  - Medical imaging may need domain-specific augmentations (rotation, intensity shift)
+
+**6. Aggressive Focal Loss Pitfall:**
+- **Experiment 5 (α=0.5, γ=3.0): 49.56%** - catastrophic failure
+- Model collapsed to predicting all AD (100% AD predictions)
+- Extreme down-weighting of easy examples prevented learning fundamental features
+- **Lesson:** Start conservative with focal loss (α=0.25, γ=2.0), tune gradually
 
 ### Limitations
 
-1. **Data Constraints:**
-   - Limited to binary classification (AD vs NC)
-   - No intermediate stages (MCI - Mild Cognitive Impairment)
+**1. Target Accuracy Not Achieved:**
+- **Goal:** ≥80% patient-level test accuracy
+- **Achieved:** 78.44% (best model)
+- **Gap:** -1.56% below target
+- **Next Steps:** Extended training experiments (40-50 epochs) in progress
 
-2. **Imaging Modality:**
-   - Only 2D slices, not full 3D volumetric analysis
-   - Loses spatial context between slices
+**2. Class Imbalance in Performance:**
+- NC accuracy (86.34%) >> AD accuracy (70.40%)
+- **16% performance gap** suggests model has trouble learning subtle AD features
+- Possible solutions:
+  - Weighted sampling to balance batches
+  - Ensemble of multiple models
+  - Attention mechanisms to focus on hippocampus/ventricles
 
-3. **Patient Demographics:**
-   - Dataset bias towards specific demographics
-   - Generalization to diverse populations untested
+**3. High False Negative Rate:**
+- **29.6% of AD patients misclassified as healthy** (patient-level)
+- This is problematic for clinical screening where missing disease is costly
+- Need to tune decision threshold or optimize for sensitivity over balanced accuracy
 
-4. **Computational Resources:**
-   - Rangpur storage limit (8GB) restricted experiment count
-   - Longer training runs could improve some models
+**4. Validation-Test Metric Mismatch:**
+- **Validation optimized for slice-level accuracy** (training metric)
+- **Test evaluated at patient-level accuracy** (clinical metric)
+- Experiment 3 had highest validation (86.71%) but not highest test (78.00%)
+- **Recommendation:** Implement patient-level validation using custom callback
 
-5. **Validation Metric Mismatch:**
-   - **Validation accuracy computed at slice-level (80.58%)**
-   - **Test accuracy computed at patient-level (73.87%)**
-   - Training optimizes for slice classification, but clinical diagnosis requires patient-level prediction
-   - This creates a ~7% performance gap between validation and test metrics
+**5. Data Constraints:**
+- Only **binary classification** (AD vs NC)
+- Missing intermediate stages: **MCI (Mild Cognitive Impairment)**, early AD
+- Real clinical challenge is detecting early-stage disease, not late-stage AD
+
+**6. 2D vs 3D Analysis:**
+- Using **2D slices** loses spatial context between adjacent slices
+- **3D volumetric models** (3D ConvNeXt, 3D ResNet) could capture full brain structure
+- Trade-off: 3D models require 10-50× more memory and computation
+
+**7. Dataset Limitations:**
+- ADNI dataset has known biases (age, ethnicity, geographic distribution)
+- Generalization to diverse populations untested
+- External validation on different datasets (OASIS, AIBL) needed
+
+**8. Computational Constraints:**
+- Rangpur HPC storage limits forced `keep_best_n=1` strategy
+- Only best model checkpoint retained, others deleted to save space
+- Training curves preserved for analysis (small file size)
+- Unable to run large hyperparameter sweeps or ensemble experiments
 
 ---
 

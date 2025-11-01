@@ -310,7 +310,8 @@ def train(
     
     # Scheduler parameters
     scheduler_type='onecycle',  # 'onecycle' or 'cosine'
-    onecycle_pct_start=0.3,     # OneCycleLR: warmup percentage
+    scheduler_params=None,      # Optional: override scheduler-specific parameters
+    onecycle_pct_start=0.3,     # OneCycleLR: warmup percentage (default if not in scheduler_params)
     onecycle_div_factor=10,     # OneCycleLR: initial lr division
     onecycle_final_div=1e4,     # OneCycleLR: final lr division
     cosine_t_max=None,          # CosineAnnealingLR: period (default: num_epochs)
@@ -515,10 +516,26 @@ def train(
     # Learning rate scheduler
     print(f"\nScheduler Type: {scheduler_type.upper()}")
     
+    # Apply scheduler_params override if provided
+    if scheduler_params:
+        print(f"Using custom scheduler_params: {scheduler_params}")
+        if scheduler_type == 'onecycle':
+            # Override OneCycle params if provided
+            onecycle_pct_start = scheduler_params.get('pct_start', onecycle_pct_start)
+            max_lr = scheduler_params.get('max_lr', learning_rate * 10)
+            onecycle_div_factor = scheduler_params.get('div_factor', onecycle_div_factor)
+            onecycle_final_div = scheduler_params.get('final_div_factor', onecycle_final_div)
+        elif scheduler_type == 'cosine':
+            # Override Cosine params if provided
+            cosine_t_max = scheduler_params.get('T_max', cosine_t_max)
+            cosine_eta_min = scheduler_params.get('eta_min', cosine_eta_min)
+    else:
+        max_lr = learning_rate * 10  # Default OneCycle max LR
+    
     if scheduler_type == 'onecycle':
         scheduler = OneCycleLR(
             optimiser,
-            max_lr=learning_rate * 10,  # Peak at 10x base LR
+            max_lr=max_lr,
             steps_per_epoch=len(train_loader),
             epochs=num_epochs,
             pct_start=onecycle_pct_start,
@@ -527,10 +544,10 @@ def train(
             final_div_factor=onecycle_final_div
         )
         print(f"OneCycleLR Settings:")
-        print(f"  Max LR: {learning_rate * 10:.2e}")
+        print(f"  Max LR: {max_lr:.2e}")
         print(f"  Warmup: {onecycle_pct_start*100:.0f}% of training")
-        print(f"  Initial LR: {learning_rate / onecycle_div_factor:.2e}")
-        print(f"  Final LR: {learning_rate * 10 / onecycle_final_div:.2e}")
+        print(f"  Initial LR: {max_lr / onecycle_div_factor:.2e}")
+        print(f"  Final LR: {max_lr / onecycle_final_div:.2e}")
     
     elif scheduler_type == 'cosine':
         t_max = cosine_t_max or num_epochs

@@ -67,7 +67,7 @@ class SequentialExperimentRunner:
     
     def run_prediction(self, experiment_name, checkpoint_path):
         """
-        Run prediction on a trained model
+        Run prediction on a trained model using the full predict.py script
         
         Returns:
             dict: Test results including accuracy and metrics
@@ -76,106 +76,91 @@ class SequentialExperimentRunner:
         print(f"RUNNING PREDICTION: {experiment_name}")
         print("=" * 80)
         
-        import torch
-        from modules import get_model
-        from sklearn.metrics import precision_recall_fscore_support, confusion_matrix
-        import numpy as np
+        import subprocess
         
-        # Load checkpoint
-        checkpoint = torch.load(checkpoint_path, map_location='cpu')
-        config = checkpoint['config']
+        # Call predict.py with full visualization flags
+        cmd = [
+            'python', 'predict.py',
+            '--checkpoint', checkpoint_path,
+            '--experiment_name', experiment_name,  # FIX: Pass experiment name for consistent file naming
+            '--patient_level',           # Enable patient-level evaluation
+            '--plot_confusion',          # Generate confusion matrices
+            '--save_predictions',        # Save results to JSON
+            '--save_dir', self.results_dir,
+            '--data_dir', '/home/groups/comp3710/ADNI/AD_NC',
+            '--batch_size', '32',
+        ]
         
-        # Get device
-        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        print(f"\nRunning command:")
+        print(' '.join(cmd))
+        print()
         
-        # Load model
-        model = get_model(
-            model_name=config['model_name'],
-            num_classes=2,
-            dropout=config['dropout'],
-            pretrained=config.get('pretrained', False),
-            pretrain_stages=config.get('pretrain_stages', 'all')
-        )
-        model.load_state_dict(checkpoint['model_state_dict'])
-        model.to(device)
-        model.eval()
+        # Run predict.py
+        result = subprocess.run(cmd, capture_output=False, text=True)
         
-        # Load test data
-        _, _, test_loader = get_dataloaders(
-            data_dir=config.get('data_dir', '/home/groups/comp3710/ADNI/AD_NC'),
-            batch_size=32,
-            num_workers=1,
-            img_size=config.get('img_size', 224),
-            val_split=0.2
-        )
+        if result.returncode != 0:
+            raise RuntimeError(f"Prediction failed with exit code {result.returncode}")
         
-        # Evaluate
-        all_labels = []
-        all_preds = []
+        # Load results from JSON
+        results_path = os.path.join(self.results_dir, f'test_results_{experiment_name}.json')
         
-        with torch.no_grad():
-            for images, labels in test_loader:
-                images, labels = images.to(device), labels.to(device)
-                outputs = model(images)
-                _, preds = torch.max(outputs, 1)
-                
-                all_labels.extend(labels.cpu().numpy())
-                all_preds.extend(preds.cpu().numpy())
+        if not os.path.exists(results_path):
+            raise FileNotFoundError(f"Results file not found: {results_path}")
         
-        all_labels = np.array(all_labels)
-        all_preds = np.array(all_preds)
+        with open(results_path, 'r') as f:
+            detailed_results = json.load(f)
         
-        # Calculate metrics
-        accuracy = 100 * (all_preds == all_labels).sum() / len(all_labels)
+        # Extract metrics from the new JSON format
+        slice_level = detailed_results.get('slice_level', {})
+        patient_level = detailed_results.get('patient_level', {})
         
-        # Per-class accuracy
-        nc_mask = all_labels == 0
-        ad_mask = all_labels == 1
-        nc_acc = 100 * (all_preds[nc_mask] == all_labels[nc_mask]).sum() / nc_mask.sum()
-        ad_acc = 100 * (all_preds[ad_mask] == all_labels[ad_mask]).sum() / ad_mask.sum()
-        
-        # F1, Precision, Recall
-        precision, recall, f1, _ = precision_recall_fscore_support(
-            all_labels, all_preds, average=None
-        )
-        
-        # Confusion matrix
-        cm = confusion_matrix(all_labels, all_preds)
-        
-        results = {
-            'test_accuracy': float(accuracy),
-            'test_nc_accuracy': float(nc_acc),
-            'test_ad_accuracy': float(ad_acc),
-            'test_f1_nc': float(f1[0]),
-            'test_f1_ad': float(f1[1]),
-            'test_precision_nc': float(precision[0]),
-            'test_precision_ad': float(precision[1]),
-            'test_recall_nc': float(recall[0]),
-            'test_recall_ad': float(recall[1]),
-            'confusion_matrix': cm.tolist(),
-        }
-        
+        # Print results
         print(f"\n{'=' * 80}")
         print(f"TEST RESULTS: {experiment_name}")
         print(f"{'=' * 80}")
-        print(f"Overall Accuracy: {accuracy:.2f}%")
-        print(f"NC Accuracy:      {nc_acc:.2f}%")
-        print(f"AD Accuracy:      {ad_acc:.2f}%")
-        print(f"F1 Score (NC):    {f1[0]:.4f}")
-        print(f"F1 Score (AD):    {f1[1]:.4f}")
+        print(f"\nSLICE-LEVEL:")
+        print(f"  Overall Accuracy: {slice_level.get('accuracy', 0):.2f}%")
+        print(f"  NC Accuracy:      {slice_level.get('nc_accuracy', 0):.2f}%")
+        print(f"  AD Accuracy:      {slice_level.get('ad_accuracy', 0):.2f}%")
+        print(f"  F1 Score (NC):    {slice_level.get('nc_f1', 0):.4f}")
+        print(f"  F1 Score (AD):    {slice_level.get('ad_f1', 0):.4f}")
+        
+        if patient_level:
+            print(f"\nPATIENT-LEVEL:")
+            print(f"  Overall Accuracy: {patient_level.get('accuracy', 0):.2f}%")
+            print(f"  NC Accuracy:      {patient_level.get('nc_accuracy', 0):.2f}%")
+            print(f"  AD Accuracy:      {patient_level.get('ad_accuracy', 0):.2f}%")
+            print(f"  F1 Score (NC):    {patient_level.get('nc_f1', 0):.4f}")
+            print(f"  F1 Score (AD):    {patient_level.get('ad_f1', 0):.4f}")
+            print(f"  Num Patients:     {patient_level.get('num_patients', 0)}")
+        
         print(f"{'=' * 80}\n")
         
-        # Save detailed results
-        detailed_results = {
-            'experiment_name': experiment_name,
-            'checkpoint_info': config,
-            'metrics': results
+        # Return metrics in the format expected by run_experiment()
+        # Use patient-level as primary metric if available, otherwise slice-level
+        primary = patient_level if patient_level else slice_level
+        
+        results = {
+            'test_accuracy': float(primary.get('accuracy', 0)),
+            'test_nc_accuracy': float(primary.get('nc_accuracy', 0)),
+            'test_ad_accuracy': float(primary.get('ad_accuracy', 0)),
+            'test_f1_nc': float(primary.get('nc_f1', 0)),
+            'test_f1_ad': float(primary.get('ad_f1', 0)),
+            'test_precision_nc': float(primary.get('nc_precision', 0)),
+            'test_precision_ad': float(primary.get('ad_precision', 0)),
+            'test_recall_nc': float(primary.get('nc_recall', 0)),
+            'test_recall_ad': float(primary.get('ad_recall', 0)),
         }
         
-        results_path = os.path.join(self.results_dir, f'test_results_{experiment_name}.json')
-        with open(results_path, 'w') as f:
-            json.dump(detailed_results, f, indent=2)
+        # Also store both levels separately
+        if patient_level:
+            results['slice_level_accuracy'] = float(slice_level.get('accuracy', 0))
+            results['patient_level_accuracy'] = float(patient_level.get('accuracy', 0))
+            results['num_patients'] = int(patient_level.get('num_patients', 0))
+        
         print(f"✓ Detailed results saved to {results_path}")
+        print(f"✓ Confusion matrices saved to {self.results_dir}/confusion_matrix_*.png")
+        print(f"✓ Sample predictions saved to {self.results_dir}/sample_predictions_{experiment_name}.png\n")
         
         return results
     

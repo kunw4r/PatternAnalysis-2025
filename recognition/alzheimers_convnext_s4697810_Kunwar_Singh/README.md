@@ -84,7 +84,6 @@ ConvNeXt combines the best of both worlds: the efficiency and scalability of CNN
 | Normal Control (NC) | Alzheimer's Disease (AD) |
 |---------------------|--------------------------|
 | ![NC Example](images/sample_nc.jpeg) | ![AD Example](images/sample_ad.jpeg) |
-| Healthy brain structure with preserved cortical thickness | Visible atrophy and enlarged ventricles |
 
 ### Train/Val/Test Split Strategy
 

@@ -1,0 +1,5 @@
+
+# Exclude from git
+.history/
+others/
+predictions_vis/

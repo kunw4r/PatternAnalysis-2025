@@ -30,6 +30,7 @@
    - [Validation Performance](#validation-performance)
    - [Test Set Evaluation](#test-set-evaluation)
    - [Confusion Matrix](#confusion-matrix)
+   - [Sample Predictions](#sample-predictions)
 7. [Discussion](#discussion)
    - [Best Performing Model](#best-performing-model)
    - [Key Findings](#key-findings)
@@ -662,6 +663,23 @@ Exp 14 achieved target accuracy by drastically improving NC detection (98.2% vs 
 - **False negatives:** 1,753 slices (39.3%)
 
 Patient-level majority voting improves NC accuracy from 92.8% → 98.2% by aggregating ~20 slices per patient.
+
+### Sample Predictions
+
+**Visual Examples from Best Model (Experiment 14):**
+
+![Sample Predictions](images/sample_predictions_14_base_pretrained_60ep.png)
+
+The figure above shows representative predictions from the test set, demonstrating:
+- **Correct NC predictions:** Model confidently identifies healthy brain scans with high probability scores (typically >0.95)
+- **Correct AD predictions:** Model detects Alzheimer's cases with moderate-to-high confidence (0.70-0.95)
+- **False negatives (AD→NC):** Challenging AD cases misclassified as NC, often with lower confidence scores (0.55-0.75), indicating model uncertainty
+- **False positives (NC→AD):** Rare cases (only 4 patients) where healthy scans were misclassified
+
+**Key Observations:**
+- Model exhibits appropriate uncertainty on difficult cases (lower confidence scores)
+- Strong visual features learned: ventricle size, hippocampal atrophy, cortical thinning
+- Majority voting across ~20 slices per patient provides robust patient-level diagnosis
 
 ---
 

@@ -134,10 +134,13 @@ train_idx, val_idx = next(gss.split(paths, labels, groups))
 - Each patient's brain has unique anatomical characteristics that could be memorised
 - Patient-level splitting ensures true generalisation to unseen individuals
 
+*See implementation in [`dataset.py`](dataset.py) lines 150-180*
+
 ### Preprocessing Pipeline
 
 **Training Data Augmentation:**
 ```python
+# From dataset.py (lines 85-105)
 transforms.Compose([
     transforms.Grayscale(num_output_channels=1),
     transforms.Resize(256),
@@ -153,6 +156,7 @@ transforms.Compose([
 
 **Validation/Test Data:**
 ```python
+# From dataset.py (lines 107-120)
 transforms.Compose([
     transforms.Grayscale(num_output_channels=1),
     transforms.Resize(256),
@@ -297,15 +301,19 @@ Pretrained weights transfer effectively despite domain shift (natural images →
 - **Experiments 9-14:** Extended training (40-60 epochs) with systematic optimisation
 - **Best model (Exp 14):** Extended training to 60 epochs, achieving 80% target accuracy
 
+*Full training implementation in [`train.py`](train.py), experiment configs in [`experiment_configs.py`](experiment_configs.py)*
+
 ### Loss Functions
 
 **1. Cross-Entropy Loss:**
 ```python
+# From modules.py (lines 600-605)
 criterion = nn.CrossEntropyLoss()
 ```
 
 **2. Label Smoothing:**
 ```python
+# From modules.py (lines 607-615)
 criterion = nn.CrossEntropyLoss(label_smoothing=0.1)
 ```
 - Prevents overconfidence
@@ -313,6 +321,7 @@ criterion = nn.CrossEntropyLoss(label_smoothing=0.1)
 
 **3. Focal Loss:**
 ```python
+# Custom implementation in modules.py (lines 44-89)
 class FocalLoss(nn.Module):
     def __init__(self, alpha=0.25, gamma=2.0):
         # Focuses on hard examples
@@ -369,14 +378,15 @@ Conducted 14 experiments across 3 phases to systematically achieve ≥80% patien
 
 **Architecture Implementation (Built from Scratch):**
 
-ConvNeXt architecture implemented layer-by-layer in `modules.py`:
-- `LayerNorm2d`: Custom layer normalisation for channels-first format
-- `DropPath`: Stochastic depth for regularisation
-- `ConvNeXtBlock`: Depthwise 7×7 conv → LayerNorm → Pointwise MLP → Layer Scale → Residual
-- `ConvNeXt`: Full 4-stage architecture with configurable depths/dimensions
+ConvNeXt architecture implemented layer-by-layer in [`modules.py`](modules.py):
+- `LayerNorm2d` (lines 92-110): Custom layer normalisation for channels-first format
+- `DropPath` (lines 24-42): Stochastic depth for regularisation
+- `ConvNeXtBlock` (lines 112-169): Depthwise 7×7 conv → LayerNorm → Pointwise MLP → Layer Scale → Residual
+- `ConvNeXt` (lines 171-327): Full 4-stage architecture with configurable depths/dimensions
+- `load_pretrained_weights()` (lines 495-565): Transfer ImageNet weights to custom architecture
 
 ```python
-# From modules.py - Custom ConvNeXt implementation
+# From modules.py (lines 427-494) - Custom ConvNeXt implementation
 from modules import convnext_base
 
 # Create model from scratch (random initialisation)
@@ -397,7 +407,7 @@ model = convnext_base(
     pretrained=True,      # Transfer learning
     pretrain_stages='all' # Load full backbone weights
 )
-# Weights are loaded via load_pretrained_weights() which:
+# Weights are loaded via load_pretrained_weights() (lines 495-565) which:
 # 1. Downloads official ImageNet ConvNeXt weights
 # 2. Transfers compatible layers to our custom implementation
 # 3. Initialises classifier head randomly (task-specific)
@@ -508,6 +518,7 @@ Precision / Recall / F1:
 
 **Patient-Level Evaluation Code:**
 ```python
+# From predict.py (lines 150-220)
 import numpy as np
 from collections import defaultdict
 
@@ -545,9 +556,11 @@ def evaluate_patient_level(model, test_loader, device):
     
     return patient_accuracy, patient_final_preds, patient_labels
 ```
+*See full implementation in [`predict.py`](predict.py) lines 150-220*
 
 **Loading Best Model for Inference:**
 ```python
+# From predict.py (lines 45-85)
 import torch
 from modules import convnext_base
 from PIL import Image
@@ -569,7 +582,7 @@ model.load_state_dict(checkpoint['model_state_dict'])
 model.eval()
 model.to('cuda')
 
-# Preprocessing (same as training)
+# Preprocessing (same as training - see dataset.py lines 85-105)
 transform = transforms.Compose([
     transforms.Resize((224, 224)),
     transforms.Grayscale(num_output_channels=1),  # MRI grayscale

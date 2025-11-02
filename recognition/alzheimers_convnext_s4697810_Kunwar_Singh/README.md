@@ -74,8 +74,8 @@ ConvNeXt combines the best of both worlds: the efficiency and scalability of CNN
 
 - **Source:** ADNI Dataset subset located at `/home/groups/comp3710/ADNI/AD_NC` on Rangpur HPC
 - **Classes:**
-  - `NC` (Normal Control) - Label 0
-  - `AD` (Alzheimer's Disease) - Label 1
+  - `NC` (Normal Control), Label 0
+  - `AD` (Alzheimer's Disease), Label 1
 - **Format:** Greyscale 2D MRI brain slices
 - **Total Images:** ~30,520 slices from 670 unique patients
 
@@ -175,9 +175,9 @@ transforms.Compose([
 
 ### ConvNeXt Overview
 
-ConvNeXt is a modern convolutional neural network that reimagines classic CNNs by integrating successful design elements from Vision Transformers (ViTs) [[1]](#references). Developed by Facebook AI Research (Liu et al., 2022), it achieves state-of-the-art performance on image recognition while maintaining CNN efficiency—ideal for medical imaging with limited data.
+ConvNeXt is a modern convolutional neural network that reimagines classic CNNs by integrating successful design elements from Vision Transformers (ViTs) [[1]](#references). Developed by Facebook AI Research (Liu et al., 2022), it achieves state-of-the-art performance on image recognition while maintaining CNN efficiency, ideal for medical imaging with limited data.
 
-**Key Innovation:** Bridges the gap between traditional CNNs (efficiency, hardware optimisation) and Vision Transformers (flexible architectures, advanced normalization), achieving comparable accuracy to Swin Transformers with pure convolutions [[2]](#references).
+**Key Innovation:** Bridges the gap between traditional CNNs (efficiency, hardware optimisation) and Vision Transformers (flexible architectures, advanced normalisation), achieving comparable accuracy to Swin Transformers with pure convolutions [[2]](#references).
 
 ### Architecture Overview
 
@@ -194,11 +194,11 @@ ConvNeXt follows a four-stage hierarchical structure, progressively reducing spa
 The fundamental building block uses an **inverted bottleneck** design inspired by Transformers:
 
 ![Block Comparison](images/comp.png)
-*Figure 3: Architectural comparison of Swin Transformer, ResNet, and ConvNeXt blocks. ConvNeXt adopts the inverted bottleneck structure (expand-then-compress) with depthwise 7×7 convolutions and modern normalization (LayerNorm + GELU) [[3]](#references).*
+*Figure 3: Architectural comparison of Swin Transformer, ResNet, and ConvNeXt blocks. ConvNeXt adopts the inverted bottleneck structure (expand-then-compress) with depthwise 7×7 convolutions and modern normalisation (LayerNorm + GELU) [[3]](#references).*
 
 **Core Components:**
 1. **Depthwise 7×7 Convolution:** Large receptive field for spatial feature extraction (processes each channel independently)
-2. **Layer Normalization:** Better training stability than BatchNorm, especially on small medical datasets
+2. **Layer Normalisation:** Better training stability than BatchNorm, especially on small medical datasets
 3. **1×1 Pointwise Convolution (Expand):** 4× channel expansion (96 → 384) for rich feature learning
 4. **GELU Activation:** Smooth, continuous gradients compared to ReLU
 5. **1×1 Pointwise Convolution (Project):** Compress back to original dimensions (384 → 96)
@@ -254,7 +254,7 @@ Pretrained weights transfer effectively despite domain shift (natural images →
 
 - **83% fewer parameters** than standard convolutions (depthwise separable design)
 - **2.3× larger receptive field** (7×7 vs 3×3)
-- **Hardware optimized:** CNNs leverage GPU acceleration better than Transformers
+- **Hardware optimised:** CNNs leverage GPU acceleration better than Transformers
 
 ---
 
@@ -346,9 +346,9 @@ Conducted 14 experiments across 3 phases to systematically achieve ≥80% patien
 
 | Exp | Name | Architecture | Pretrained | Epochs | Loss | Scheduler | Dropout | Patient Acc | Key Insight |
 |-----|------|--------------|------------|--------|------|-----------|---------|-------------|-------------|
-| 1 | tiny_onecycle | Tiny (28M) | ❌ | 30 | Label Smooth | OneCycle | 0.2 | 77.78% | Baseline - smallest |
-| 2 | small_onecycle | Small (50M) | ❌ | 30 | Label Smooth | OneCycle | 0.2 | 78.00% | Baseline - medium |
-| 3 | base_onecycle | Base (89M) | ❌ | 30 | Label Smooth | OneCycle | 0.2 | 78.00% | Baseline - largest |
+| 1 | tiny_onecycle | Tiny (28M) | ❌ | 30 | Label Smooth | OneCycle | 0.2 | 77.78% | Baseline, smallest |
+| 2 | small_onecycle | Small (50M) | ❌ | 30 | Label Smooth | OneCycle | 0.2 | 78.00% | Baseline, medium |
+| 3 | base_onecycle | Base (89M) | ❌ | 30 | Label Smooth | OneCycle | 0.2 | 78.00% | Baseline, largest |
 | 4 | base_pretrained | Base (89M) | ✅ | 30 | Focal | OneCycle | 0.3 | 78.44% | **Transfer learning unlocked** |
 | 5 | base_focal_aggressive | Base (89M) | ❌ | 30 | Focal (α=0.5, γ=3.0) | OneCycle | 0.3 | 49.56% | ⚠️ Aggressive focal collapsed |
 | 6 | base_cosine_highLR | Base (89M) | ❌ | 30 | Label Smooth | Cosine | 0.2 | 76.89% | Alternative scheduler underperformed |
@@ -383,7 +383,7 @@ ConvNeXt architecture implemented layer-by-layer in [`modules.py`](modules.py):
 - `load_pretrained_weights()` (lines 495-565): Transfer ImageNet weights to custom architecture
 
 ```python
-# From modules.py (lines 427-494) - Custom ConvNeXt implementation
+# From modules.py (lines 427-494), Custom ConvNeXt implementation
 from modules import convnext_base
 
 # Option 1: Train from scratch (Experiments 1-3, 6-8, 10, 13)
@@ -440,13 +440,13 @@ The training progression demonstrates excellent learning dynamics across 60 epoc
 **Three-Phase Training:**
 1. **Warmup & Peak Learning (Epochs 1-30):** Training accuracy climbs 52% → 86%, validation 57% → 86%. OneCycleLR ramps from 8e-5 to peak 8e-4, enabling rapid feature learning.
 
-2. **Fine-Tuning (Epochs 31-54):** Training plateaus at 92-96%, validation peaks at 92.94% (epoch 54 - best checkpoint). Learning rate anneals smoothly, model converges to optimal solution.
+2. **Fine-Tuning (Epochs 31-54):** Training plateaus at 92-96%, validation peaks at 92.94% (epoch 54, best checkpoint). Learning rate anneals smoothly, model converges to optimal solution.
 
 3. **Stabilisation (Epochs 55-60):** Validation fluctuates 92.48-92.92%, training maintains 95-96%. Very low LR (~1e-8) causes minimal parameter changes.
 
 **Key Observations:**
-- Validation loss tracks training loss closely → excellent generalisation, no overfitting
-- Best model saved at epoch 54/60 → proper early stopping, not final epoch
+- Validation loss tracks training loss closely, excellent generalisation, no overfitting
+- Best model saved at epoch 54/60, proper early stopping, not final epoch
 - Extended training (60 vs 50 epochs) provided critical +0.22% to cross 80% threshold
 - Dropout 0.3 + weight decay 0.01 enabled extended training without overfitting
 
@@ -481,13 +481,13 @@ Top 5 models ranked by validation accuracy (slice-level during training):
 
 **Best Model: Experiment 14 (base_pretrained_60ep)**
 
-**Patient-Level Metrics** (Majority Voting - Clinical Standard):
+**Patient-Level Metrics** (Majority Voting, Clinical Standard):
 ```
-Overall Accuracy: 80.00% (360/450 patients) - TARGET ACHIEVED
+Overall Accuracy: 80.00% (360/450 patients), TARGET ACHIEVED
 
 Per-Class Accuracy:
-  NC: 98.24% (223/227 patients) - only 4 false positives
-  AD: 61.43% (137/223 patients) - 86 false negatives
+  NC: 98.24% (223/227 patients), only 4 false positives
+  AD: 61.43% (137/223 patients), 86 false negatives
 
 Precision / Recall / F1:
   NC: 0.722 / 0.982 / 0.832
@@ -630,9 +630,9 @@ def predict_slice(image_path, model, transform):
 | **Predicted AD** | 4 (1.8%) | 137 (61.4%) | Excellent precision: 97.2% of AD predictions correct |
 
 **Key Metrics:**
-- **Patient accuracy:** 80.00% (360/450) - target achieved
-- **NC detection:** 98.24% (223/227) - only 4 healthy patients misdiagnosed
-- **AD detection:** 61.43% (137/223) - 86 AD patients missed
+- **Patient accuracy:** 80.00% (360/450), target achieved
+- **NC detection:** 98.24% (223/227), only 4 healthy patients misdiagnosed
+- **AD detection:** 61.43% (137/223), 86 AD patients missed
 - **Trade-off:** Exceptional specificity (98.2%) at cost of sensitivity (61.4%)
 
 **Clinical Relevance:**
@@ -691,10 +691,10 @@ The figure above shows representative predictions from the test set, demonstrati
 
 **Configuration:**
 ```python
-Architecture: ConvNeXt-Base (87.5M parameters) - Built from scratch in modules.py
+Architecture: ConvNeXt-Base (87.5M parameters), Built from scratch in modules.py
 Pretrained: ImageNet weights transferred to custom implementation
 Epochs: 60 (best checkpoint: epoch 54)
-Loss: Focal Loss (α=0.25, γ=2.0) - Custom implementation
+Loss: Focal Loss (α=0.25, γ=2.0), Custom implementation
 Scheduler: OneCycleLR (max_lr=8e-4, pct_start=0.3)
 Optimiser: AdamW (weight_decay=0.01)
 Dropout: 0.3, Batch size: 16
@@ -932,7 +932,7 @@ alzheimers_convnext_kunwar/
 
 3. **Expand Dataset and Classes:**
    - Include MCI (Mild Cognitive Impairment) class for 3-way classification
-   - More diverse patient demographics to improve generalization
+   - More diverse patient demographics to improve generalisation
    - Longitudinal data for disease progression tracking
    - External validation on independent datasets (e.g., OASIS, NACC)
 
@@ -948,7 +948,7 @@ alzheimers_convnext_kunwar/
    - AutoAugment to learn optimal augmentation policies
 
 6. **Model Explainability:**
-   - Grad-CAM visualizations showing which brain regions influence predictions
+   - Grad-CAM visualisations showing which brain regions influence predictions
    - Saliency maps highlighting hippocampus, ventricles, cortex
    - SHAP values for feature importance
    - Help clinicians understand and trust model decisions
@@ -959,8 +959,8 @@ alzheimers_convnext_kunwar/
    - Integrate CSF biomarkers (Aβ42, p-tau)
    - Multi-modal transformers for comprehensive diagnosis
 
-8. **Hyperparameter Optimization:**
-   - Bayesian optimization for learning rate, dropout, focal loss parameters
+8. **Hyperparameter Optimisation:**
+   - Bayesian optimisation for learning rate, dropout, focal loss parameters
    - Neural Architecture Search (NAS) for optimal ConvNeXt configuration
    - Automated ML pipelines for systematic exploration
 
@@ -968,53 +968,27 @@ alzheimers_convnext_kunwar/
 
 ## Conclusion
 
-This project successfully achieved the **80% patient-level test accuracy target** for Alzheimer's Disease classification on the ADNI MRI dataset using a custom-built ConvNeXt architecture.
+This project successfully achieved the **80% patient-level test accuracy target** for Alzheimer's Disease classification using a custom-built ConvNeXt architecture on the ADNI MRI dataset.
 
 **Key Achievements:**
-- ✅ **Target accuracy reached:** 80.00% (360/450 patients) with Experiment 14
-- ✅ **Custom implementation:** Built ConvNeXt from scratch in 673 lines (modules.py)
-- ✅ **14 experiments conducted:** Systematic exploration of architectures, losses, schedulers
-- ✅ **Exceptional NC detection:** 98.24% specificity (only 4 false positives)
-- ✅ **Transfer learning validated:** ImageNet pretraining provided consistent +4-5% improvement
-- ✅ **Focal Loss superiority:** Outperformed cross-entropy and label smoothing
-- ✅ **Extended training benefit:** 60 epochs crucial for crossing 80% threshold
+- **Target reached:** 80.00% accuracy (360/450 patients correctly classified)
+- **Custom implementation:** ConvNeXt built from scratch (673 lines in modules.py)
+- **Exceptional specificity:** 98.24% NC detection with only 4 false positives
+- **Transfer learning validated:** ImageNet pretrained weights provided +4-5% improvement
+- **Systematic experimentation:** 14 experiments identified optimal configuration
 
-**Technical Insights:**
-1. **Transfer learning is essential:** All top 4 models used ImageNet pretrained weights
-2. **Focal Loss dominates:** Superior to label smoothing and cross-entropy for this task
-3. **Extended training pays off:** 60 > 50 > 30 epochs with proper regularization
-4. **OneCycleLR optimal:** Consistently outperformed cosine annealing
-5. **Patient-level splitting critical:** Prevents data leakage in medical ML
-6. **MixUp harmful:** Poor results (56.44%) on medical imaging vs natural images
+**Main Findings:**
+1. Transfer learning from ImageNet significantly improves medical imaging performance despite domain differences
+2. Focal Loss outperformed cross-entropy and label smoothing for this classification task
+3. Extended training (60 epochs) with proper regularisation was crucial to reach the target
+4. Patient-level data splitting prevented data leakage and ensured robust evaluation
+5. MixUp augmentation performed poorly on medical images (56.44% vs 80% without it)
 
-**Clinical Trade-offs:**
-- **Strength:** 98.24% NC detection → minimal false alarms, low patient anxiety
-- **Limitation:** 61.43% AD detection → 39% of AD cases missed
-- **Application:** Better suited for **confirmatory testing** (high precision) than **screening** (requires high sensitivity)
-- **Real-world impact:** Would require human review for NC predictions to catch false negatives
+**Clinical Implications:**
+The model excels at identifying healthy patients (98.24% NC detection) but has limited sensitivity for Alzheimer's cases (61.43% AD detection). This makes it suitable for confirmatory testing and reducing radiologist workload on NC cases, but improvement is needed before deployment as a standalone screening tool.
 
-**Comparison to State-of-the-Art:**
-- Competitive with published results on ADNI (typically 75-85% patient-level accuracy)
-- Achieved without 3D volumetric analysis or multi-modal fusion
-- Pure CNN approach matches/exceeds many Vision Transformer implementations
-- 160 minutes training time on single A100 GPU (computationally efficient)
-
-**Research Contribution:**
-This project demonstrates that:
-- Modern CNNs (ConvNeXt) remain highly competitive for medical imaging
-- Custom implementations with transfer learning can match pre-built models
-- Careful hyperparameter tuning and extended training are crucial
-- Patient-level evaluation reveals true clinical performance vs slice-level metrics
-
-**Future Directions:**
-While the 80% target was achieved, the model's AD sensitivity (61.43%) indicates room for improvement through:
-- Ensemble methods
-- Multi-modal integration (clinical data + MRI)
-- 3D volumetric analysis
-- Threshold optimization for sensitivity-specificity balance
-
-**Final Remarks:**
-This project showcases the potential of deep learning for computer-aided diagnosis in neurodegenerative diseases. The techniques demonstrated—custom architecture implementation, systematic experimentation, transfer learning, and patient-level evaluation—provide a solid foundation for future medical imaging research. While not deployment-ready for clinical screening (due to limited AD sensitivity), the model's exceptional specificity makes it valuable as a confirmatory tool to reduce radiologist workload on NC cases.
+**Future Work:**
+Further improvements could be achieved through ensemble methods, multi-modal fusion with clinical data, 3D volumetric analysis, and threshold optimisation to better balance sensitivity and specificity.
 
 ---
 

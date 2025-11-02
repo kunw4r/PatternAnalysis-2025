@@ -912,36 +912,19 @@ alzheimers_convnext_s4697810_Kunwar_singh/
      - Model selection based on clinically relevant metric
      - Early stopping aligned with patient diagnosis performance
 
-3. **Expand Dataset and Classes:**
-   - Include MCI (Mild Cognitive Impairment) class for 3-way classification
-   - More diverse patient demographics to improve generalisation
-   - Longitudinal data for disease progression tracking
-   - External validation on independent datasets (e.g., OASIS, NACC)
-
-4. **3D Volumetric Analysis:**
-   - Extend to 3D ConvNeXt to capture full brain structure
-   - Process entire MRI volumes instead of 2D slices
-   - Better capture spatial relationships and atrophy patterns
-
-5. **Advanced Augmentation Strategies:**
+3. **Advanced Augmentation Strategies:**
    - Elastic deformations for anatomical variations
    - CutMix instead of MixUp (MixUp showed poor results in Exp 7)
    - Test-time augmentation (TTA) for robust predictions
    - AutoAugment to learn optimal augmentation policies
 
-6. **Model Explainability:**
+4. **Model Explainability:**
    - Grad-CAM visualisations showing which brain regions influence predictions
    - Saliency maps highlighting hippocampus, ventricles, cortex
    - SHAP values for feature importance
    - Help clinicians understand and trust model decisions
 
-7. **Multi-Modal Learning:**
-   - Combine MRI with clinical metadata (age, APOE genotype, cognitive scores)
-   - Fusion with PET scans (amyloid/tau imaging)
-   - Integrate CSF biomarkers (Aβ42, p-tau)
-   - Multi-modal transformers for comprehensive diagnosis
-
-8. **Hyperparameter Optimisation:**
+5. **Hyperparameter Optimisation:**
    - Bayesian optimisation for learning rate, dropout, focal loss parameters
    - Neural Architecture Search (NAS) for optimal ConvNeXt configuration
    - Automated ML pipelines for systematic exploration

@@ -426,19 +426,6 @@ model = convnext_base(
 # 5. Updates our custom model:
 #    model_dict.update(pretrained_dict)  # Copy ImageNet weights
 #    model.load_state_dict(model_dict, strict=False)
-#
-# Layers transferred (ImageNet → Our Model):
-#   ✅ downsample_layers.0-3 (stem + 3 downsampling layers)
-#   ✅ stages.0-3 (all 36 ConvNeXt blocks with learned weights)
-#   ✅ Layer norms, depthwise convs, pointwise convs
-#   ❌ head.weight, head.bias (classifier: 1000 classes → 2 classes)
-#
-# Special handling for in_chans=1:
-#   - ImageNet model expects RGB (3 channels)
-#   - Our model uses grayscale (1 channel)
-#   - First conv layer weights averaged: (3, H, W) → (1, H, W)
-#
-# Result: Backbone has ImageNet knowledge, classifier learns AD/NC from scratch
 ```
 
 ---

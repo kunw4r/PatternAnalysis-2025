@@ -862,26 +862,31 @@ python predict.py \
 ### File Structure
 
 ```
-alzheimers_convnext_kunwar/
-├── train.py                          # Main training script
-├── predict.py                        # Test evaluation
-├── dataset.py                        # Data loading with patient-level split
-├── modules.py                        # ConvNeXt models and loss functions
-├── experiment_configs.py             # All 8 experiment definitions
-├── run_experiments_sequential.py     # Sequential experiment runner
-├── run_sequential.sh                 # SLURM job script
-├── checkpoints/
-│   ├── best_model_4_base_pretrained.pth
-│   ├── training_curves_4_base_pretrained.png
-│   └── config_4_base_pretrained.json
-├── results/
-│   ├── all_experiments_results.csv
-│   ├── test_results_4_base_pretrained.json
-│   ├── confusion_matrix_slice_4_base_pretrained.png
-│   ├── confusion_matrix_patient_4_base_pretrained.png
-│   └── sample_predictions_4_base_pretrained.png
-└── README.md                         # This file
+alzheimers_convnext_s4697810_Kunwar_singh/
+├── train.py                                      # Main training script with flexible schedulers
+├── predict.py                                    # Test evaluation with patient-level majority voting
+├── dataset.py                                    # ADNI data loader with patient-level splitting
+├── modules.py                                    # Custom ConvNeXt architecture (673 lines)
+├── README.md                                     # Comprehensive documentation (this file)
+└── images/                                       # Training visualisations and results
+    ├── arch.png                                  # ConvNeXt architecture diagram
+    ├── struct.png                                # Stage-wise structure diagram
+    ├── comp.png                                  # Block comparison (ResNet vs ConvNeXt)
+    ├── sample_nc.jpeg                            # Example Normal Control MRI
+    ├── sample_ad.jpeg                            # Example Alzheimer's Disease MRI
+    ├── training_curves_4_base_pretrained.png     # Experiment 4 training curves
+    ├── training_curves_11_best.png               # Experiment 11 training curves
+    ├── training_curves_14_best.png               # Experiment 14 training curves (best model)
+    ├── confusion_matrix_slice.png                # Slice-level confusion matrix
+    ├── confusion_matrix_patient.png              # Patient-level confusion matrix
+    ├── confusion_matrix_slice_11_best.png        # Experiment 11 slice-level results
+    ├── confusion_matrix_patient_11_best.png      # Experiment 11 patient-level results
+    ├── confusion_matrix_slice_14_best.png        # Experiment 14 slice-level results
+    ├── confusion_matrix_patient_14_best.png      # Experiment 14 patient-level results
+    └── sample_predictions_14_best.png            # Visual examples from best model
 ```
+
+**Note:** Checkpoint files (`.pth`) and result files (`.csv`, `.json`) are not included in the repository due to file size constraints. All visualisations and documentation are provided in the `images/` folder.
 
 ---
 

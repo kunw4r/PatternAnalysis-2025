@@ -823,21 +823,6 @@ Strong correlation validates training process, though validation uses slice-leve
 
 ## Reproducibility
 
-### Environment Setup
-
-**On Rangpur HPC:**
-
-```bash
-# Load modules
-module load miniconda3
-
-# Activate environment
-conda activate torch
-
-# Verify installation
-python -c "import torch; print(torch.__version__)"  # Should be 2.2+
-```
-
 **Dependencies:**
 - Python: 3.11
 - PyTorch: 2.2.0
@@ -863,14 +848,6 @@ python train.py \
   --num_epochs 30 \
   --pretrained \
   --experiment_name 4_base_pretrained
-```
-
-**All Experiments Sequentially:**
-```bash
-# Uses experiment_configs.py
-python run_experiments_sequential.py \
-  --experiments all \
-  --keep-best 1
 ```
 
 **Test Set Evaluation:**

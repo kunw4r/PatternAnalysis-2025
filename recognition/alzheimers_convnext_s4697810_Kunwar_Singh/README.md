@@ -414,15 +414,15 @@ model = convnext_base(
 #    - Downloaded to ~/.cache/torch/hub/checkpoints/
 # 3. Extracts state_dict (all layer weights as tensors)
 # 4. Filters compatible layers:
-#    pretrained_dict = {
-#        k: v for k, v in pretrained_dict.items()
-#        if k in model_dict           # Layer exists in our model
-#        and v.shape == model_dict[k].shape  # Tensor shapes match
-#        and 'head' not in k          # Skip classifier (1000→2 classes)
-#    }
+      pretrained_dict = {
+         k: v for k, v in pretrained_dict.items()
+         if k in model_dict           # Layer exists in our model
+         and v.shape == model_dict[k].shape  # Tensor shapes match
+         and 'head' not in k          # Skip classifier (1000→2 classes)
+      }
 # 5. Updates our custom model:
-#    model_dict.update(pretrained_dict)  # Copy ImageNet weights
-#    model.load_state_dict(model_dict, strict=False)
+     model_dict.update(pretrained_dict)  # Copy ImageNet weights
+     model.load_state_dict(model_dict, strict=False)
 ```
 
 ---

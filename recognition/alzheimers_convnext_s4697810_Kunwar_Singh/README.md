@@ -47,17 +47,23 @@
 
 ## Project Overview
 
-This project applies **ConvNeXt** (Convolution Next), a modern convolutional neural network architecture, to classify Alzheimer's Disease (AD) versus Normal Control (NC) subjects using 2D MRI brain scans from the **ADNI (Alzheimer's Disease Neuroimaging Initiative)** dataset.
+This project implements **ConvNeXt** (Convolution Next) **from scratch** to classify Alzheimer's Disease (AD) versus Normal Control (NC) subjects using 2D MRI brain scans from the **ADNI (Alzheimer's Disease Neuroimaging Initiative)** dataset.
+
+**Implementation Approach:**
+- **Custom architecture:** Built ConvNeXt layer-by-layer in `modules.py` (LayerNorm2d, DropPath, ConvNeXtBlock, ConvNeXt)
+- **Transfer learning:** Optionally load ImageNet pretrained weights into custom implementation
+- **Custom loss functions:** Focal Loss, Label Smoothing implemented from scratch
+- **Advanced training:** OneCycleLR scheduler, stochastic depth, layer scale
 
 **Goal:** Achieve ≥80% test accuracy using patient-level evaluation while exploring the effects of:
 - Model size (Tiny, Small, Base)
 - Learning rate schedulers (OneCycle, Cosine Annealing)
 - Loss functions (Cross-Entropy, Label Smoothing, Focal Loss)
 - Data augmentation strategies (MixUp)
-- Transfer learning (ImageNet pretrained weights)
+- Transfer learning (ImageNet pretrained weights transferred to custom architecture)
 
 **Why ConvNeXt?**
-ConvNeXt combines the best of both worlds: the efficiency and scalability of CNNs with modern training techniques inspired by Vision Transformers. It achieves state of the art performance while maintaining computational efficiency crucial for medical imaging tasks with limited data.
+ConvNeXt combines the best of both worlds: the efficiency and scalability of CNNs with modern training techniques inspired by Vision Transformers. It achieves state-of-the-art performance while maintaining computational efficiency crucial for medical imaging tasks with limited data.
 
 ---
 
@@ -355,29 +361,46 @@ Conducted 14 experiments across 3 phases to systematically achieve ≥80% patien
 - **Phase 3 (Exp 9-14):** Extended training → 60 epochs with proper regularisation crossed 80% threshold
 
 **Critical Hyperparameter Patterns:**
-- **Transfer learning essential:** Top 4 models all use ImageNet pretrained weights (+4.32% average)
+- **Transfer learning essential:** Top 4 models use ImageNet pretrained weights loaded into custom architecture (+4.32% average)
 - **Focal loss dominates:** All top 5 models use focal loss (α=0.25, γ=2.0)
 - **Extended training validated:** 60 > 50 > 30 epochs with dropout 0.3-0.4
 - **OneCycleLR optimal:** All top models use OneCycle (max_lr=8e-4, pct_start=0.3)
 - **Avoid:** Aggressive focal loss (α>0.3), MixUp augmentation, pure cross-entropy
 
-**Loading Pretrained Weights:**
-```python
-import torch
-import timm
+**Architecture Implementation (Built from Scratch):**
 
-# Load ConvNeXt with ImageNet pretrained weights
-model = timm.create_model(
-    'convnext_base',
-    pretrained=True,      # Load ImageNet weights
-    num_classes=2,        # Binary classification
-    drop_rate=0.3,        # Dropout for regularisation
-    drop_path_rate=0.1    # Stochastic depth
+ConvNeXt architecture implemented layer-by-layer in `modules.py`:
+- `LayerNorm2d`: Custom layer normalisation for channels-first format
+- `DropPath`: Stochastic depth for regularisation
+- `ConvNeXtBlock`: Depthwise 7×7 conv → LayerNorm → Pointwise MLP → Layer Scale → Residual
+- `ConvNeXt`: Full 4-stage architecture with configurable depths/dimensions
+
+```python
+# From modules.py - Custom ConvNeXt implementation
+from modules import convnext_base
+
+# Create model from scratch (random initialisation)
+model = convnext_base(
+    num_classes=2,
+    in_chans=1,           # Grayscale MRI input
+    dropout_rate=0.3,
+    drop_path_rate=0.1,
+    pretrained=False      # Train from scratch (exp 1-3)
 )
 
-# Fine-tune all layers (not frozen)
-for param in model.parameters():
-    param.requires_grad = True
+# OR: Load ImageNet weights into custom architecture (exp 4, 9-14)
+model = convnext_base(
+    num_classes=2,
+    in_chans=1,
+    dropout_rate=0.3,
+    drop_path_rate=0.1,
+    pretrained=True,      # Transfer learning
+    pretrain_stages='all' # Load full backbone weights
+)
+# Weights are loaded via load_pretrained_weights() which:
+# 1. Downloads official ImageNet ConvNeXt weights
+# 2. Transfers compatible layers to our custom implementation
+# 3. Initialises classifier head randomly (task-specific)
 ```
 
 ---
@@ -409,45 +432,6 @@ The training progression demonstrates excellent learning dynamics across 60 epoc
 - Exp 11 (50 epochs): 79.78% test, 92.27% validation, best at epoch 46
 - Exp 14 (60 epochs): 80.00% test, 92.94% validation (+0.67%), best at epoch 54
 - Extended training allowed model to find better local optimum
-
-**Focal Loss & OneCycleLR Setup:**
-```python
-import torch
-import torch.nn as nn
-
-# Focal Loss for class imbalance
-class FocalLoss(nn.Module):
-    def __init__(self, alpha=0.25, gamma=2.0):
-        super().__init__()
-        self.alpha = alpha
-        self.gamma = gamma
-        
-    def forward(self, inputs, targets):
-        ce_loss = nn.functional.cross_entropy(inputs, targets, reduction='none')
-        pt = torch.exp(-ce_loss)
-        focal_loss = self.alpha * (1 - pt) ** self.gamma * ce_loss
-        return focal_loss.mean()
-
-# OneCycleLR scheduler for extended training
-from torch.optim.lr_scheduler import OneCycleLR
-
-optimizer = torch.optim.AdamW(
-    model.parameters(),
-    lr=8e-4,              # max_lr (reached at 30% of training)
-    weight_decay=0.01     # L2 regularisation
-)
-
-scheduler = OneCycleLR(
-    optimizer,
-    max_lr=8e-4,          # Peak learning rate
-    epochs=60,            # Total epochs
-    steps_per_epoch=len(train_loader),
-    pct_start=0.3,        # Warmup for first 30% (18 epochs)
-    anneal_strategy='cos', # Cosine annealing after peak
-    div_factor=10,        # Initial LR = max_lr / 10 = 8e-5
-    final_div_factor=1e4  # Final LR = max_lr / 10000 = 8e-8
-)
-```
 
 ### Validation Performance
 
@@ -565,7 +549,7 @@ def evaluate_patient_level(model, test_loader, device):
 **Loading Best Model for Inference:**
 ```python
 import torch
-import timm
+from modules import convnext_base
 from PIL import Image
 import torchvision.transforms as transforms
 
@@ -573,11 +557,11 @@ import torchvision.transforms as transforms
 checkpoint = torch.load('checkpoints/best_model_job320372.pth')
 
 # Recreate model architecture (must match training config)
-model = timm.create_model(
-    'convnext_base',
-    pretrained=False,     # Don't load ImageNet weights
+model = convnext_base(
     num_classes=2,
-    drop_rate=0.3
+    in_chans=1,           # Grayscale MRI
+    dropout_rate=0.3,
+    pretrained=False      # Architecture only, weights loaded below
 )
 
 # Load trained weights
@@ -588,14 +572,14 @@ model.to('cuda')
 # Preprocessing (same as training)
 transform = transforms.Compose([
     transforms.Resize((224, 224)),
+    transforms.Grayscale(num_output_channels=1),  # MRI grayscale
     transforms.ToTensor(),
-    transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                        std=[0.229, 0.224, 0.225])
+    transforms.Normalize(mean=[0.5], std=[0.5])   # Grayscale normalisation
 ])
 
-# Inference on single image
-def predict_image(image_path, model, transform):
-    image = Image.open(image_path).convert('RGB')
+# Inference on single MRI slice
+def predict_slice(image_path, model, transform):
+    image = Image.open(image_path)
     image_tensor = transform(image).unsqueeze(0).to('cuda')
     
     with torch.no_grad():
@@ -665,10 +649,10 @@ Patient-level majority voting improves NC accuracy from 92.8% → 98.2% by aggre
 
 **Configuration:**
 ```python
-Architecture: ConvNeXt-Base (87.5M parameters)
-Pretrained: ImageNet weights (all stages)
+Architecture: ConvNeXt-Base (87.5M parameters) - Built from scratch in modules.py
+Pretrained: ImageNet weights transferred to custom implementation
 Epochs: 60 (best checkpoint: epoch 54)
-Loss: Focal Loss (α=0.25, γ=2.0)
+Loss: Focal Loss (α=0.25, γ=2.0) - Custom implementation
 Scheduler: OneCycleLR (max_lr=8e-4, pct_start=0.3)
 Optimiser: AdamW (weight_decay=0.01)
 Dropout: 0.3, Batch size: 16
@@ -683,11 +667,13 @@ Dropout: 0.3, Batch size: 16
 
 **Why it succeeded:**
 
-1. **Extended Training (60 epochs):** Critical +0.22% improvement over 50-epoch models to cross 80% threshold. Proper regularisation (dropout 0.3, weight decay 0.01) prevented overfitting.
+1. **Custom Architecture Implementation:** Built ConvNeXt from scratch (LayerNorm2d, DropPath, ConvNeXtBlock) in `modules.py` - not using pre-built libraries. Transfer learning loads ImageNet weights into our custom implementation.
 
-2. **Transfer Learning:** ImageNet pretrained weights provided robust feature extractors. All top 4 models use pretraining (+4.32% average improvement).
+2. **Extended Training (60 epochs):** Critical +0.22% improvement over 50-epoch models to cross 80% threshold. Proper regularisation (dropout 0.3, weight decay 0.01) prevented overfitting.
 
-3. **Focal Loss:** Down-weights easy NC examples, focuses on hard AD cases. All top 5 models use focal loss (α=0.25, γ=2.0).
+3. **Transfer Learning:** ImageNet pretrained weights loaded into custom architecture provided robust feature extractors. All top 4 models use this approach (+4.32% average improvement over from-scratch baselines).
+
+4. **Focal Loss (Custom Implementation):** Down-weights easy NC examples, focuses on hard AD cases. All top 5 models use focal loss (α=0.25, γ=2.0).
 
 4. **OneCycleLR:** 30% warmup (18 epochs) + peak learning (12 epochs) + long annealing (30 epochs) enabled aggressive early training and precise late convergence.
 

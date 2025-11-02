@@ -140,29 +140,25 @@ train_idx, val_idx = next(gss.split(paths, labels, groups))
 
 **Training Data Augmentation:**
 ```python
-# From dataset.py (lines 85-105)
+# From dataset.py (lines 117-126)
 transforms.Compose([
-    transforms.Grayscale(num_output_channels=1),
-    transforms.Resize(256),
-    transforms.RandomCrop(224),
+    transforms.Resize((224, 224)),
     transforms.RandomHorizontalFlip(p=0.5),
     transforms.RandomRotation(degrees=15),
-    transforms.RandomAffine(degrees=0, translate=(0.1, 0.1)),
-    transforms.RandomErasing(p=0.3),
+    transforms.RandomAffine(degrees=0, translate=(0.1, 0.1), scale=(0.9, 1.1)),
     transforms.ToTensor(),
-    transforms.Normalise(mean=[0.5], std=[0.5])
+    transforms.Normalize(mean=[0.5], std=[0.5]),
+    transforms.RandomErasing(p=0.2, scale=(0.02, 0.1))
 ])
 ```
 
 **Validation/Test Data:**
 ```python
-# From dataset.py (lines 107-120)
+# From dataset.py (lines 127-132)
 transforms.Compose([
-    transforms.Grayscale(num_output_channels=1),
-    transforms.Resize(256),
-    transforms.CenterCrop(224),
+    transforms.Resize((224, 224)),
     transforms.ToTensor(),
-    transforms.Normalise(mean=[0.5], std=[0.5])
+    transforms.Normalize(mean=[0.5], std=[0.5])
 ])
 ```
 
@@ -307,14 +303,14 @@ Pretrained weights transfer effectively despite domain shift (natural images →
 
 **1. Cross-Entropy Loss:**
 ```python
-# From modules.py (lines 600-605)
+# From modules.py (lines 597-598)
 criterion = nn.CrossEntropyLoss()
 ```
 
 **2. Label Smoothing:**
 ```python
-# From modules.py (lines 607-615)
-criterion = nn.CrossEntropyLoss(label_smoothing=0.1)
+# From modules.py (lines 599-601)
+criterion = LabelSmoothingLoss(smoothing=0.1, num_classes=2)
 ```
 - Prevents overconfidence
 - Improves generalisation
@@ -597,7 +593,7 @@ model.load_state_dict(checkpoint['model_state_dict'])
 model.eval()
 model.to('cuda')
 
-# Preprocessing (same as training - see dataset.py lines 85-105)
+# Preprocessing (same as training - see dataset.py lines 127-132)
 transform = transforms.Compose([
     transforms.Resize((224, 224)),
     transforms.Grayscale(num_output_channels=1),  # MRI grayscale
@@ -828,11 +824,13 @@ python -c "import torch; print(torch.__version__)"  # Should be 2.2+
 - Python: 3.11
 - PyTorch: 2.2.0
 - CUDA: 12.1
-- torchvision: 0.17.0
-- timm: 0.9.12 (for pretrained models)
-- scikit-learn: 1.3.2
-- matplotlib: 3.8.2
-- seaborn: 0.13.0
+- torchvision: 0.17.0 (for pretrained weight loading)
+- scikit-learn: 1.3.2 (for GroupShuffleSplit, metrics)
+- Pillow (PIL): 10.1.0 (for image loading)
+- NumPy: 1.24.3
+- tqdm: 4.66.1 (for progress bars)
+- matplotlib: 3.8.2 (for plotting)
+- seaborn: 0.13.0 (for confusion matrices)
 
 ### Running Experiments
 

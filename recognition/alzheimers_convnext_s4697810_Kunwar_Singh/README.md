@@ -624,30 +624,37 @@ Precision / Recall / F1:
 - Larger batch size (48 vs 16) improved small model performance
 - **Practical recommendation:** Small model offers best speed/accuracy trade-off
 - Tiny model competitive (77.78%) for rapid prototyping
-- For production, Small model might offer best speed/accuracy trade-off
 
-**3. Loss Function Comparison:**
-| Loss Type | Best Experiment | Patient Test Acc |
-|-----------|-----------------|------------------|
-| **Focal Loss** | **4_base_pretrained** | **78.44%** |
-| Label Smoothing | 3_base_onecycle | 78.00% |
-| Cross-Entropy | 8_base_crossentropy | 71.33% |
+**4. Loss Function Comparison:**
 
-- Focal loss handles class imbalance and hard examples best
-- Pure cross-entropy severely underperformed (71.33%)
-- Label smoothing competitive but slightly behind focal loss
+| Loss Type | Best Experiment | Patient Test Acc | Notes |
+|-----------|-----------------|------------------|-------|
+| **Focal Loss** | **11_base_pretrained_higher_dropout** | **79.78%** | Best for class imbalance |
+| Label Smoothing | 13_small_onecycle_40ep_batch48 | 79.78% | Tied with focal loss |
+| Label Smoothing | 3_base_onecycle | 78.00% | From-scratch baseline |
+| Cross-Entropy | 8_base_crossentropy | 71.33% | Worst performance |
 
-**4. Learning Rate Scheduler Impact:**
-- **OneCycleLR:** Used by top 4 experiments (77.78%-78.44%)
-  - Fast warm-up, peak LR at 30% of training, smooth annealing
-  - Excellent for fine-tuning pretrained models
-- **CosineAnnealing:** Experiment 6 (76.89%)
-  - Slower convergence, requires careful tuning
-  - High LR (5e-4) may have been too aggressive
+- **Focal loss (α=0.25, γ=2.0)** most effective for hard AD examples
+- Label smoothing competitive when combined with other optimizations
+- Pure cross-entropy severely underperformed (-8.45% vs focal loss)
 
-**5. Data Augmentation Failure:**
+**5. Learning Rate Scheduler Impact:**
+
+| Scheduler | Experiments | Best Patient Acc | Average |
+|-----------|-------------|------------------|---------|
+| **OneCycleLR** | 1, 2, 3, 4, 9, 10, 11, 12, 13 | **79.78%** | **76.64%** |
+| CosineAnnealing | 6 | 76.89% | 76.89% |
+
+- **OneCycleLR dominates:** Used by all top 5 experiments
+- Fast warm-up (30% of training) + peak LR + smooth annealing
+- Excellent for fine-tuning pretrained models
+- Custom max_lr (8e-4) crucial for optimal performance
+
+**6. Data Augmentation Analysis:**
 - **Experiment 7 (MixUp): 56.44%** - severe underperformance
-- **Experiment 8 (No MixUp): 71.33%** - recovered performance
+- MixUp blends images from different classes → confuses model with anatomical differences
+- Medical imaging requires more conservative augmentation (spatial transforms only)
+- Standard augmentation (random flips, rotations) sufficient for this task
 - **Hypothesis:** MixUp blending destroys critical AD biomarkers
   - Hippocampal atrophy and ventricular enlargement are spatially localized
   - Blending slices from different patients creates unrealistic brain anatomy

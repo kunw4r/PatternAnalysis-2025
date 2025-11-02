@@ -389,28 +389,56 @@ ConvNeXt architecture implemented layer-by-layer in [`modules.py`](modules.py):
 # From modules.py (lines 427-494) - Custom ConvNeXt implementation
 from modules import convnext_base
 
-# Create model from scratch (random initialisation)
+# Option 1: Train from scratch (Experiments 1-3, 6-8, 10, 13)
 model = convnext_base(
-    num_classes=2,
-    in_chans=1,           # Grayscale MRI input
-    dropout_rate=0.3,
-    drop_path_rate=0.1,
-    pretrained=False      # Train from scratch (exp 1-3)
+    num_classes=2,        # Binary classification (AD vs NC)
+    in_chans=1,           # Grayscale MRI input (not RGB)
+    dropout_rate=0.3,     # Dropout before classifier
+    drop_path_rate=0.1,   # Stochastic depth for regularisation
+    pretrained=False      # Random weight initialisation
 )
+# Result: ~89M parameters, all randomly initialised
+# Training: Model learns from scratch using only ADNI dataset
 
-# OR: Load ImageNet weights into custom architecture (exp 4, 9-14)
+# Option 2: Transfer Learning (Experiments 4, 9, 11-12, 14)
 model = convnext_base(
     num_classes=2,
     in_chans=1,
     dropout_rate=0.3,
     drop_path_rate=0.1,
-    pretrained=True,      # Transfer learning
-    pretrain_stages='all' # Load full backbone weights
+    pretrained=True,      # Load ImageNet pretrained weights
+    pretrain_stages='all' # Options: 'all', 'early', 'stem'
 )
-# Weights are loaded via load_pretrained_weights() (lines 495-565) which:
-# 1. Downloads official ImageNet ConvNeXt weights
-# 2. Transfers compatible layers to our custom implementation
-# 3. Initialises classifier head randomly (task-specific)
+
+# What happens with pretrained=True:
+# 1. load_pretrained_weights() called (modules.py lines 495-565)
+# 2. Downloads torchvision.models.convnext_base(weights='IMAGENET1K_V1')
+#    - Trained on 1.28M ImageNet images (1000 classes)
+#    - Downloaded to ~/.cache/torch/hub/checkpoints/
+# 3. Extracts state_dict (all layer weights as tensors)
+# 4. Filters compatible layers:
+#    pretrained_dict = {
+#        k: v for k, v in pretrained_dict.items()
+#        if k in model_dict           # Layer exists in our model
+#        and v.shape == model_dict[k].shape  # Tensor shapes match
+#        and 'head' not in k          # Skip classifier (1000→2 classes)
+#    }
+# 5. Updates our custom model:
+#    model_dict.update(pretrained_dict)  # Copy ImageNet weights
+#    model.load_state_dict(model_dict, strict=False)
+#
+# Layers transferred (ImageNet → Our Model):
+#   ✅ downsample_layers.0-3 (stem + 3 downsampling layers)
+#   ✅ stages.0-3 (all 36 ConvNeXt blocks with learned weights)
+#   ✅ Layer norms, depthwise convs, pointwise convs
+#   ❌ head.weight, head.bias (classifier: 1000 classes → 2 classes)
+#
+# Special handling for in_chans=1:
+#   - ImageNet model expects RGB (3 channels)
+#   - Our model uses grayscale (1 channel)
+#   - First conv layer weights averaged: (3, H, W) → (1, H, W)
+#
+# Result: Backbone has ImageNet knowledge, classifier learns AD/NC from scratch
 ```
 
 ---
